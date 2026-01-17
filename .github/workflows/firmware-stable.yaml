@@ -1,6 +1,5 @@
 name: firmware-stable
 on:
-  workflow_dispatch:
   schedule:
     # 00:30 PST / Nightly
     - cron:  '30 8 * * *'
