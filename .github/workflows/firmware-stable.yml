@@ -19,7 +19,7 @@ on:
         default: false
       tg_scratch:
         type: boolean
-        description: 'Use TG scratch channel'
+        description: 'Use TG scratch channel '
         required: false
         default: false
       graph_enabled:
