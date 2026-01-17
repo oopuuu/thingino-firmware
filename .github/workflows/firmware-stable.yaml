@@ -1,4 +1,5 @@
-name: firmware-stable
+name: firmware-stable-oop
+
 on:
   schedule:
     # 00:30 PST / Nightly
