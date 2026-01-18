@@ -486,6 +486,7 @@ jobs:
           files: |
             ${{ env.FULL_FW }}
             ${{ env.FULL_FW_SHA }}
+            ${{ env.UPDATE_FW }}
             ${{ env.UPDATE_FW_SHA }}
 
       - name: Package binaries for notification
