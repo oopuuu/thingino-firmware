@@ -19,7 +19,7 @@ on:
         default: false
       tg_scratch:
         type: boolean
-        description: 'Use TG scratch channel '
+        description: 'Use TG scratch channel'
         required: false
         default: false
       graph_enabled:
@@ -39,7 +39,7 @@ on:
         default: false
       board_list:
         type: string
-        description: '输入型号 (逗号分隔，如: wyze_cam3_t31x)。留空则按原逻辑编译。'
+        description: '输入型号 (逗号分隔，如: zte_k540_t31x_sc4336_eth+atbm6032)。留空则按原逻辑。'
         required: false
 
 env:
@@ -65,7 +65,6 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || 'stable' }}
           fetch-depth: 0
-
       - name: Check for updates
         id: check
         run: |
@@ -76,10 +75,10 @@ jobs:
           LATEST_RELEASE=$(gh release list --repo ${{ github.repository }} --json tagName,name | jq -r '.[] | select(.name | startswith("firmware-")) | .tagName' | head -1)
           if [[ -z "$LATEST_RELEASE" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-          else
-            LATEST_RELEASE_COMMIT=$(gh api repos/${{ github.repository }}/git/ref/tags/$LATEST_RELEASE | jq -r '.object.sha')
-            [[ "$(git rev-parse HEAD)" != "$LATEST_RELEASE_COMMIT" ]] && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
+          LATEST_RELEASE_COMMIT=$(gh api repos/${{ github.repository }}/git/ref/tags/$LATEST_RELEASE | jq -r '.object.sha')
+          [[ "$(git rev-parse HEAD)" != "$LATEST_RELEASE_COMMIT" ]] && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
 
   prepare-release:
     runs-on: ubuntu-24.04
@@ -93,6 +92,24 @@ jobs:
         run: |
           T_NAME="firmware-$(TZ=UTC date +'%Y-%m-%d')"
           echo "tag_name=$T_NAME" >> $GITHUB_OUTPUT
+      - name: Create release tag
+        continue-on-error: true
+        run: |
+          TAG_NAME="${{ steps.set_tag.outputs.tag_name }}"
+          git tag "$TAG_NAME" || true
+          git push origin "$TAG_NAME" || true
+          gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Building..." --prerelease || true
+
+  notify-begin:
+    runs-on: ubuntu-24.04
+    needs: prepare-release
+    outputs:
+      start_time: ${{ steps.set_output.outputs.time }}
+    steps:
+      - id: set_output
+        run: echo "time=$(date +%s)" >> $GITHUB_OUTPUT
+      - name: Notify
+        run: echo "Build started."
 
   generate-matrix:
     runs-on: ubuntu-24.04
@@ -111,9 +128,9 @@ jobs:
           if [[ -n "${{ github.event.inputs.board_list }}" ]]; then
             CONFIGS=$(echo "${{ github.event.inputs.board_list }}" | tr ',' '\n')
           elif [[ "${{ github.event.inputs.teacup_only }}" == 'true' ]]; then
-            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sed 's|.*/\(.*\)_defconfig|\1|' | grep teacup)
+            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sort | sed 's|.*/\(.*\)_defconfig|\1|' | grep teacup)
           else
-            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sed 's|.*/\(.*\)_defconfig|\1|')
+            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sort | sed 's|.*/\(.*\)_defconfig|\1|')
           fi
           JSON=$(echo "$CONFIGS" | jq -R . | jq -s '{ "thingino-version": . }' -c)
           echo "matrix=$JSON" >> $GITHUB_OUTPUT
@@ -122,90 +139,62 @@ jobs:
     name: ${{ matrix.thingino-version }}
     needs: [generate-matrix, notify-begin, prepare-release]
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    outputs:
-      GIT_HASH: ${{ steps.env.outputs.git_hash }}
-      TAG_NAME: ${{ steps.env.outputs.tag_name }}
-    defaults:
-      run:
-        shell: bash
-    container:
-      image: debian:trixie
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
+    container:
+      image: debian:trixie
     steps:
-      - name: Install dependencies
+      - name: Dependencies
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends autoconf build-essential bc cmake cpio curl ca-certificates file git gh make gawk jq m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget 7z
+          apt-get update && apt-get install -y curl gnupg2 git jq
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
+          apt-get update && apt-get install -y --no-install-recommends build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget 7z
 
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: 'true'
           ref: ${{ github.event.inputs.branch || 'stable' }}
-          fetch-depth: "0"
+          fetch-depth: 0
 
-      - name: Configure environment variables
-        id: env
-        run: |
-          echo "GIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "TAG_NAME=${{ needs.prepare-release.outputs.tag_name }}" >> $GITHUB_OUTPUT
-          echo "WEEK_NUMBER=$(date +%U)" >> $GITHUB_ENV
-          echo "CURRENT_YEAR=$(date +%Y)" >> $GITHUB_ENV
-
-      # 关键步骤：强更 Prudynt 到最新稳定版
       - name: Patch Prudynt
         run: |
           sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/thingino-prudynt/thingino-prudynt.mk
 
-      - name: Build firmware
+      - name: Build
         run: |
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
-          echo "TIME=$(date -d @${SECONDS} +%M:%S)" >> ${GITHUB_ENV}
 
-      # --- 参照原作者逻辑，但加入路径自适应 ---
-      - name: Validate and Set Artifact Paths
-        id: validate
+      - name: Collect and Upload
+        id: collect
         run: |
           DYNAMIC_PART="${{ matrix.thingino-version }}"
-          # 寻找真实的 output 目录 (可能是 output-stable 或 output-junk)
-          REAL_OUTPUT_DIR=$(find /github/home/ -maxdepth 1 -type d -name "output-*" | head -n 1)
-          echo "Real Output Directory: $REAL_OUTPUT_DIR"
-          
-          FW_PATH="${REAL_OUTPUT_DIR}/${DYNAMIC_PART}/images"
-          echo "FW_PATH=$FW_PATH" >> $GITHUB_ENV
-          
-          # 验证 bin 文件是否存在
-          FULL_FW=$(find $FW_PATH -name "thingino-${DYNAMIC_PART}.bin" | head -n 1)
-          if [[ -n "$FULL_FW" ]]; then
-            echo "Found firmware: $FULL_FW"
-            echo "FULL_FW=$FULL_FW" >> $GITHUB_ENV
-            # 获取该目录下所有产物
-            echo "ARTIFACT_PATTERN=$FW_PATH/*" >> $GITHUB_ENV
-          else
-            echo "Firmware not found in $FW_PATH"
-            exit 1
-          fi
+          # 自动纠偏：寻找 output-stable 或 output-junk
+          REAL_PATH=$(find /github/home/ -maxdepth 2 -type d -name "images" | grep "$DYNAMIC_PART" | head -n 1)
+          echo "Real path: $REAL_PATH"
+          mkdir -p $GITHUB_WORKSPACE/all_artifacts
+          cp -v $REAL_PATH/* $GITHUB_WORKSPACE/all_artifacts/ || true
+          echo "artifact_path=$GITHUB_WORKSPACE/all_artifacts" >> $GITHUB_OUTPUT
 
-      - name: Upload compiled firmware artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: thingino-${{ matrix.thingino-version }}-firmware
-          # 这里使用我们动态探查到的路径
-          path: |
-            ${{ env.FW_PATH }}/*.bin
-            ${{ env.FW_PATH }}/*.sha256sum
-            ${{ env.FW_PATH }}/uImage
-            ${{ env.FW_PATH }}/rootfs.squashfs
+          path: all_artifacts/
 
-      - name: Post compiled firmware artifacts to release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag_name }}
-          files: |
-            ${{ env.FULL_FW }}
-            ${{ env.FW_PATH }}/*-update.bin
-            ${{ env.FW_PATH }}/*.sha256sum
+          files: all_artifacts/thingino-*.bin
         continue-on-error: true
+
+  finalize-release:
+    needs: [buildroot, prepare-release, check-updates]
+    runs-on: ubuntu-24.04
+    if: always() && needs.check-updates.outputs.should_build == 'true'
+    steps:
+      - name: Finalize
+        run: echo "Release complete."
