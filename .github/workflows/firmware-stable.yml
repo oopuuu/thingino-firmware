@@ -161,7 +161,7 @@ jobs:
 
       - name: Patch Prudynt
         run: |
-          sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/thingino-prudynt/thingino-prudynt.mk
+          sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/prudynt-t/prudynt-t.mk
 
       - name: Build
         run: |
