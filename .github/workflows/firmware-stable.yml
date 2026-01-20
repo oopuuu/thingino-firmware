@@ -171,12 +171,26 @@ jobs:
         id: collect
         run: |
           DYNAMIC_PART="${{ matrix.thingino-version }}"
-          # 自动纠偏：寻找 output-stable 或 output-junk
-          REAL_PATH=$(find /github/home/ -maxdepth 2 -type d -name "images" | grep "$DYNAMIC_PART" | head -n 1)
-          echo "Real path: $REAL_PATH"
+          # 1. 明确定义可能的输出根目录（Thingino 可能会变动 output 名称）
+          # 我们直接去 /github/home 下找包含 output 的目录
+          BASE_OUTPUT=$(ls -d /github/home/output-* 2>/dev/null | head -n 1)
+          echo "Base Output Dir: $BASE_OUTPUT"
+          
+          # 2. 拼接完整路径
+          SRC_PATH="${BASE_OUTPUT}/${DYNAMIC_PART}/images"
+          echo "Source Path: $SRC_PATH"
+          
+          # 3. 强制创建目标文件夹并拷贝
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
-          cp -v $REAL_PATH/* $GITHUB_WORKSPACE/all_artifacts/ || true
-          echo "artifact_path=$GITHUB_WORKSPACE/all_artifacts" >> $GITHUB_OUTPUT
+          if [ -d "$SRC_PATH" ]; then
+            cp -v $SRC_PATH/* $GITHUB_WORKSPACE/all_artifacts/
+            echo "Successfully collected artifacts."
+          else
+            echo "ERROR: Source path $SRC_PATH not found!"
+            # 最后的挣扎：列出目录结构看看它到底在哪
+            ls -R /github/home/
+            exit 1
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
