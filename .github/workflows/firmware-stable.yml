@@ -150,7 +150,7 @@ jobs:
           apt-get update && apt-get install -y curl gnupg2 git jq
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
-          apt-get update && apt-get install -y --no-install-recommends build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget 7z
+          apt-get update && apt-get install -y --no-install-recommends build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget 7zip
 
       - name: Checkout
         uses: actions/checkout@v4
