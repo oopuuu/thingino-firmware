@@ -146,15 +146,28 @@ jobs:
         run: |
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
-      - name: Upload
+      - name: Upload all compiled firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: thingino-${{ matrix.thingino-version }}-firmware
-          path: output-stable/${{ matrix.thingino-version }}/images/*.bin
+          name: thingino-${{ matrix.thingino-version }}-full-assets
+          # 使用通配符匹配 output 开头的目录，并递归收集 images 文件夹下的所有有用文件
+          path: |
+            output*/${{ matrix.thingino-version }}/images/thingino-*.bin
+            output*/${{ matrix.thingino-version }}/images/u-boot*.bin
+            output*/${{ matrix.thingino-version }}/images/uImage
+            output*/${{ matrix.thingino-version }}/images/rootfs.*
+            output*/${{ matrix.thingino-version }}/images/*.jffs2
+            output*/${{ matrix.thingino-version }}/images/*.sha256sum
 
-      - name: Release
+      - name: Post artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag_name }}
-          files: output-stable/${{ matrix.thingino-version }}/images/*.bin
+          # 同样在 Release 页面展示这些文件，方便直接下载
+          files: |
+            output*/${{ matrix.thingino-version }}/images/thingino-*.bin
+            output*/${{ matrix.thingino-version }}/images/u-boot*.bin
+            output*/${{ matrix.thingino-version }}/images/uImage
+            output*/${{ matrix.thingino-version }}/images/rootfs.squashfs
+            output*/${{ matrix.thingino-version }}/images/*.sha256sum
         continue-on-error: true
