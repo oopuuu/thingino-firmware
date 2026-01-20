@@ -39,7 +39,7 @@ on:
         default: false
       board_list:
         type: string
-        description: '输入型号 (逗号分隔，如: wyze_cam3_t31x)。留空则根据下方选项编译全部或Teacup。'
+        description: '输入型号 (逗号分隔，如: wyze_cam3_t31x)。留空则按原逻辑编译。'
         required: false
 
 env:
@@ -66,25 +66,19 @@ jobs:
           ref: ${{ github.event.inputs.branch || 'stable' }}
           fetch-depth: 0
 
-      - name: Check for updates since last release
+      - name: Check for updates
         id: check
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "Manual trigger detected - building"
             echo "should_build=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           LATEST_RELEASE=$(gh release list --repo ${{ github.repository }} --json tagName,name | jq -r '.[] | select(.name | startswith("firmware-")) | .tagName' | head -1)
           if [[ -z "$LATEST_RELEASE" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          LATEST_RELEASE_COMMIT=$(gh api repos/${{ github.repository }}/git/ref/tags/$LATEST_RELEASE | jq -r '.object.sha')
-          CURRENT_COMMIT=$(git rev-parse HEAD)
-          if [[ "$LATEST_RELEASE_COMMIT" == "$CURRENT_COMMIT" ]]; then
-            echo "should_build=false" >> $GITHUB_OUTPUT
           else
-            echo "should_build=true" >> $GITHUB_OUTPUT
+            LATEST_RELEASE_COMMIT=$(gh api repos/${{ github.repository }}/git/ref/tags/$LATEST_RELEASE | jq -r '.object.sha')
+            [[ "$(git rev-parse HEAD)" != "$LATEST_RELEASE_COMMIT" ]] && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
   prepare-release:
@@ -94,29 +88,11 @@ jobs:
     outputs:
       tag_name: ${{ steps.set_tag.outputs.tag_name }}
     steps:
-      - name: Set timezone
-        run: sudo timedatectl set-timezone ${{ env.TZ }}
-
-      - name: Configure TAG_NAME
+      - name: Set Tag
         id: set_tag
         run: |
-          TAG_NAME="$TAG_NAME-$(TZ=UTC date +'%Y-%m-%d')"
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-
-  notify-begin:
-    runs-on: ubuntu-24.04
-    needs: [prepare-release, check-updates]
-    if: needs.check-updates.outputs.should_build == 'true'
-    outputs:
-      start_time: ${{ steps.set_output.outputs.time }}
-    steps:
-      - name: Save workflow start time
-        id: set_output
-        run: echo "time=$(date +%s)" >> $GITHUB_OUTPUT
-
-      - name: Send build start notification via Telegram
-        if: github.event.inputs.tg_disabled != 'true'
-        run: echo "Notification logic remains here..."
+          T_NAME="firmware-$(TZ=UTC date +'%Y-%m-%d')"
+          echo "tag_name=$T_NAME" >> $GITHUB_OUTPUT
 
   generate-matrix:
     runs-on: ubuntu-24.04
@@ -125,90 +101,65 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch || 'stable' }}
-          fetch-depth: "0"
-
-      - name: Generate device matrix
+      - name: Generate Matrix
         id: set-matrix
         run: |
-          # --- 修改点：优先使用输入的 board_list ---
           if [[ -n "${{ github.event.inputs.board_list }}" ]]; then
-            echo "Using manual board list: ${{ github.event.inputs.board_list }}"
             CONFIGS=$(echo "${{ github.event.inputs.board_list }}" | tr ',' '\n')
           elif [[ "${{ github.event.inputs.teacup_only }}" == 'true' ]]; then
-            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sort | sed 's|.*/\(.*\)_defconfig|\1|' | grep teacup)
+            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sed 's|.*/\(.*\)_defconfig|\1|' | grep teacup)
           else
-            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sort | sed 's|.*/\(.*\)_defconfig|\1|')
+            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sed 's|.*/\(.*\)_defconfig|\1|')
           fi
-          
-          JSON_MATRIX="{\"thingino-version\": ["
-          for CONFIG in $CONFIGS; do
-            JSON_MATRIX+="\"${CONFIG}\","
-          done
-          JSON_MATRIX="${JSON_MATRIX%,}]}"
-          echo "matrix=$JSON_MATRIX" >> $GITHUB_OUTPUT
+          JSON=$(echo "$CONFIGS" | jq -R . | jq -s '{ "thingino-version": . }' -c)
+          echo "matrix=$JSON" >> $GITHUB_OUTPUT
 
   buildroot:
     name: ${{ matrix.thingino-version }}
-    needs: [generate-matrix, notify-begin, prepare-release]
+    needs: [generate-matrix, prepare-release]
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    outputs:
-      GIT_HASH: ${{ steps.env.outputs.git_hash }}
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
     container:
       image: debian:trixie
     steps:
-      - name: Install build dependencies
+      - name: Install Tools
         run: |
-          apt-get update
-          apt-get install -y curl gnupg2
+          apt-get update && apt-get install -y curl gnupg2 git jq
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          apt-get update
-          apt-get install -y --no-install-recommends autoconf build-essential bc cmake cpio curl ca-certificates file git gh make gawk jq m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget 7z
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
+          apt-get update && apt-get install -y --no-install-recommends build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget
 
-      - name: Checkout repository source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: 'true'
           ref: ${{ github.event.inputs.branch || 'stable' }}
-          fetch-depth: "0"
+          fetch-depth: 0
 
-      - name: Configure environment
-        id: env
+      # 核心：修复 Prudynt 限制
+      - name: Patch Prudynt
         run: |
-          echo "GIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "WEEK_NUMBER=$(date +%U)" >> $GITHUB_ENV
-          echo "CURRENT_YEAR=$(date +%Y)" >> $GITHUB_ENV
+          sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/thingino-prudynt/thingino-prudynt.mk
 
-      # --- 关键：强更 Prudynt 到最新以解除 20,000 阈值限制 ---
-      - name: Patch Prudynt version to stable
-        run: |
-          if [ -f "package/thingino-prudynt/thingino-prudynt.mk" ]; then
-            sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/thingino-prudynt/thingino-prudynt.mk
-            echo "Prudynt patched to stable branch."
-          fi
-
-      - name: Build firmware
+      - name: Build
         run: |
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
-      - name: Upload artifacts
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: thingino-${{ matrix.thingino-version }}-firmware
-          path: ${{ HOME }}/output-stable/${{ matrix.thingino-version }}/images/*.bin
+          path: output-stable/${{ matrix.thingino-version }}/images/*.bin
 
-  finalize-release:
-    needs: [buildroot, prepare-release, check-updates]
-    runs-on: ubuntu-24.04
-    if: always() && needs.check-updates.outputs.should_build == 'true'
-    steps:
-      - name: Publish Release Notes and Tag
-        run: echo "Finalizing release..."
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.tag_name }}
+          files: output-stable/${{ matrix.thingino-version }}/images/*.bin
+        continue-on-error: true
