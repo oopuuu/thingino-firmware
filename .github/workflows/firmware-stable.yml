@@ -142,11 +142,6 @@ jobs:
           ref: ${{ github.event.inputs.branch || 'stable' }}
           fetch-depth: 0
 
-      # 核心：修复 Prudynt 限制
-      - name: Patch Prudynt
-        run: |
-          sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/thingino-prudynt/thingino-prudynt.mk
-
       - name: Build
         run: |
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
