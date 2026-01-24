@@ -12,34 +12,9 @@ on:
         options:
           - stable
           - master
-      tg_disabled:
-        type: boolean
-        description: 'Disable Telegram notifications'
-        required: false
-        default: false
-      tg_scratch:
-        type: boolean
-        description: 'Use TG scratch channel'
-        required: false
-        default: false
-      graph_enabled:
-        type: boolean
-        description: 'Enable build time graph'
-        required: false
-        default: false
-      teacup_only:
-        type: boolean
-        description: 'Only build Tea Cup profile'
-        required: false
-        default: false
-      debug_enabled:
-        type: boolean
-        description: 'Debug: Generate dummy image files'
-        required: false
-        default: false
       board_list:
         type: string
-        description: '输入型号 (逗号分隔，如: zte_k540_t31x_sc4336_eth+atbm6032)。留空则按原逻辑。'
+        description: '型号 (如: zte_k540_t31x_sc4336_eth+atbm6032)'
         required: false
 
 env:
@@ -48,10 +23,6 @@ env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   TAG_NAME: firmware
   TERM: linux
-  TG_TOKEN: ${{secrets.TELEGRAM_TOKEN_BOT_THINGINO}}
-  TG_CHANNEL: ${{secrets.TELEGRAM_CHANNEL_THINGINO_MULTI}}
-  TG_TOPIC: ${{secrets.TELEGRAM_CHANNEL_THINGINO_MULTI_TOPIC_FIRMWARE}}
-  TG_CHANNEL_SCRATCH: ${{secrets.TELEGRAM_CHANNEL_THINGINO_SCRATCH}}
   TZ: UTC
 
 jobs:
@@ -90,7 +61,7 @@ jobs:
       - name: Set Tag
         id: set_tag
         run: |
-          T_NAME="firmware-$(TZ=UTC date +'%Y-%m-%d')"
+          T_NAME="firmware-$(TZ=UTC date +'%Y-%m-%d-%H%M')"
           echo "tag_name=$T_NAME" >> $GITHUB_OUTPUT
       - name: Create release tag
         continue-on-error: true
@@ -99,17 +70,6 @@ jobs:
           git tag "$TAG_NAME" || true
           git push origin "$TAG_NAME" || true
           gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Building..." --prerelease || true
-
-  notify-begin:
-    runs-on: ubuntu-24.04
-    needs: prepare-release
-    outputs:
-      start_time: ${{ steps.set_output.outputs.time }}
-    steps:
-      - id: set_output
-        run: echo "time=$(date +%s)" >> $GITHUB_OUTPUT
-      - name: Notify
-        run: echo "Build started."
 
   generate-matrix:
     runs-on: ubuntu-24.04
@@ -127,8 +87,6 @@ jobs:
         run: |
           if [[ -n "${{ github.event.inputs.board_list }}" ]]; then
             CONFIGS=$(echo "${{ github.event.inputs.board_list }}" | tr ',' '\n')
-          elif [[ "${{ github.event.inputs.teacup_only }}" == 'true' ]]; then
-            CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sort | sed 's|.*/\(.*\)_defconfig|\1|' | grep teacup)
           else
             CONFIGS=$(find configs/cameras/ -type f -name "*defconfig" | sort | sed 's|.*/\(.*\)_defconfig|\1|')
           fi
@@ -137,20 +95,22 @@ jobs:
 
   buildroot:
     name: ${{ matrix.thingino-version }}
-    needs: [generate-matrix, notify-begin, prepare-release]
+    needs: [generate-matrix, prepare-release]
     runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
-    container:
-      image: debian:trixie
     steps:
-      - name: Dependencies
+      - name: Install Dependencies
         run: |
-          apt-get update && apt-get install -y curl gnupg2 git jq
+          apt-get update && apt-get install -y curl gnupg2 git jq rsync
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
-          apt-get update && apt-get install -y --no-install-recommends build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl procps python3 rsync tzdata u-boot-tools unzip wget 7zip
+          apt-get update && apt-get install -y --no-install-recommends \
+            build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl \
+            procps python3 rsync tzdata u-boot-tools unzip wget 7zip
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -159,37 +119,36 @@ jobs:
           ref: ${{ github.event.inputs.branch || 'stable' }}
           fetch-depth: 0
 
-      - name: Patch Prudynt
+      - name: Fix U-Boot Header and Environment
         run: |
-          sed -i 's/PRUDYNT_T_VERSION = .*/PRUDYNT_T_VERSION = stable/' package/prudynt-t/prudynt-t.mk
+          # 强制在 uenv.txt 末尾添加换行符，防止注入脚本破坏 isvp_common.h 结构
+          [ -f uenv.txt ] && echo "" >> uenv.txt || echo "" > uenv.txt
+          sed -i '$a\' uenv.txt
+          # 预先清理 output 目录（如果存在）
+          rm -rf /github/home/output-*
 
-      - name: Build
+      - name: Build Firmware
         run: |
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
-      - name: Collect and Upload
+      - name: Collect Artifacts
         id: collect
         run: |
-          DYNAMIC_PART="${{ matrix.thingino-version }}"
-          # 1. 明确定义可能的输出根目录（Thingino 可能会变动 output 名称）
-          # 我们直接去 /github/home 下找包含 output 的目录
-          BASE_OUTPUT=$(ls -d /github/home/output-* 2>/dev/null | head -n 1)
-          echo "Base Output Dir: $BASE_OUTPUT"
+          BOARD_NAME="${{ matrix.thingino-version }}"
+          # 动态匹配 output 路径
+          OUTPUT_DIR=$(ls -d /github/home/output-* 2>/dev/null | head -n 1)
+          IMAGES_DIR="${OUTPUT_DIR}/${BOARD_NAME}/images"
           
-          # 2. 拼接完整路径
-          SRC_PATH="${BASE_OUTPUT}/${DYNAMIC_PART}/images"
-          echo "Source Path: $SRC_PATH"
-          
-          # 3. 强制创建目标文件夹并拷贝
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
-          if [ -d "$SRC_PATH" ]; then
-            cp -v $SRC_PATH/* $GITHUB_WORKSPACE/all_artifacts/
-            echo "Successfully collected artifacts."
+          if [ -d "$IMAGES_DIR" ]; then
+            echo "Copying images from $IMAGES_DIR"
+            cp -v $IMAGES_DIR/thingino-${BOARD_NAME}* $GITHUB_WORKSPACE/all_artifacts/ || true
+            cp -v $IMAGES_DIR/u-boot* $GITHUB_WORKSPACE/all_artifacts/ || true
+            cp -v $IMAGES_DIR/uImage $GITHUB_WORKSPACE/all_artifacts/ || true
+            cp -v $IMAGES_DIR/rootfs.squashfs $GITHUB_WORKSPACE/all_artifacts/ || true
           else
-            echo "ERROR: Source path $SRC_PATH not found!"
-            # 最后的挣扎：列出目录结构看看它到底在哪
-            ls -R /github/home/
-            exit 1
+            echo "Error: Images directory not found. Checking root..."
+            find /github/home/ -name "thingino-*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
           fi
 
       - name: Upload Artifact
@@ -198,17 +157,17 @@ jobs:
           name: thingino-${{ matrix.thingino-version }}-firmware
           path: all_artifacts/
 
-      - name: Release
+      - name: Release Update
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag_name }}
-          files: all_artifacts/thingino-*.bin
+          files: all_artifacts/*
         continue-on-error: true
 
   finalize-release:
-    needs: [buildroot, prepare-release, check-updates]
+    needs: [buildroot, prepare-release]
     runs-on: ubuntu-24.04
-    if: always() && needs.check-updates.outputs.should_build == 'true'
+    if: always()
     steps:
       - name: Finalize
-        run: echo "Release complete."
+        run: echo "Build complete."
