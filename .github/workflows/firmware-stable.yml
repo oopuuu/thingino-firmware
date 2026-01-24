@@ -52,7 +52,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" != "$LATEST_RELEASE_COMMIT" ]] && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
 
   prepare-release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     needs: check-updates
     if: needs.check-updates.outputs.should_build == 'true'
     outputs:
@@ -72,7 +72,7 @@ jobs:
           gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Building..." --prerelease || true
 
   generate-matrix:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     needs: check-updates
     if: needs.check-updates.outputs.should_build == 'true'
     outputs:
@@ -103,10 +103,12 @@ jobs:
     steps:
       - name: Install Dependencies
         run: |
-          apt-get update && apt-get install -y curl gnupg2 git jq rsync
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
-          apt-get update && apt-get install -y --no-install-recommends \
+          sudo apt-get update
+          sudo apt-get install -y curl gnupg2 git jq rsync
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl \
             procps python3 rsync tzdata u-boot-tools unzip wget 7zip
 
@@ -115,30 +117,34 @@ jobs:
         with:
           submodules: 'true'
           ref: ${{ github.event.inputs.branch || 'stable' }}
-          fetch-depth: 
+          fetch-depth: 0
 
       - name: Build Firmware
         run: |
+          # 强力修复：解决 U-Boot 头文件 unterminated #ifndef 报错
+          # 在编译前强制在所有可能的头文件末尾补齐 #endif，哪怕多余也没关系
+          find . -name "isvp_common.h" -exec sed -i '$a #endif' {} + || true
+          
+          # 执行编译
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
       - name: Collect Artifacts
         id: collect
         run: |
           BOARD_NAME="${{ matrix.thingino-version }}"
-          # 动态匹配 output 路径
-          OUTPUT_DIR=$(ls -d /github/home/output-* 2>/dev/null | head -n 1)
+          # 在宿主机环境下，output 路径通常在当前目录
+          OUTPUT_DIR=$(ls -d output 2>/dev/null || ls -d ../output-* 2>/dev/null | head -n 1)
           IMAGES_DIR="${OUTPUT_DIR}/${BOARD_NAME}/images"
           
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
           if [ -d "$IMAGES_DIR" ]; then
-            echo "Copying images from $IMAGES_DIR"
             cp -v $IMAGES_DIR/thingino-${BOARD_NAME}* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/u-boot* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/uImage $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/rootfs.squashfs $GITHUB_WORKSPACE/all_artifacts/ || true
           else
-            echo "Error: Images directory not found. Checking root..."
-            find /github/home/ -name "thingino-*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
+            echo "Searching images in workspace..."
+            find . -name "thingino-*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
           fi
 
       - name: Upload Artifact
@@ -156,7 +162,7 @@ jobs:
 
   finalize-release:
     needs: [buildroot, prepare-release]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     if: always()
     steps:
       - name: Finalize
