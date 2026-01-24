@@ -27,7 +27,7 @@ env:
 
 jobs:
   check-updates:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
@@ -96,9 +96,7 @@ jobs:
   buildroot:
     name: ${{ matrix.thingino-version }}
     needs: [generate-matrix, prepare-release]
-    runs-on: ubuntu-24.04
-    container:
-      image: debian:trixie
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
@@ -117,15 +115,7 @@ jobs:
         with:
           submodules: 'true'
           ref: ${{ github.event.inputs.branch || 'stable' }}
-          fetch-depth: 0
-
-      - name: Fix U-Boot Header and Environment
-        run: |
-          # 强制在 uenv.txt 末尾添加换行符，防止注入脚本破坏 isvp_common.h 结构
-          [ -f uenv.txt ] && echo "" >> uenv.txt || echo "" > uenv.txt
-          sed -i '$a\' uenv.txt
-          # 预先清理 output 目录（如果存在）
-          rm -rf /github/home/output-*
+          fetch-depth: 
 
       - name: Build Firmware
         run: |
