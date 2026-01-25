@@ -121,11 +121,6 @@ jobs:
 
       - name: Build Firmware
         run: |
-          # 强力修复：解决 U-Boot 头文件 unterminated #ifndef 报错
-          # 在编译前强制在所有可能的头文件末尾补齐 #endif，哪怕多余也没关系
-          find . -name "isvp_common.h" -exec sed -i '$a #endif' {} + || true
-          
-          # 执行编译
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
       - name: Collect Artifacts
