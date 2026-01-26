@@ -27,7 +27,7 @@ env:
 
 jobs:
   check-updates:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
@@ -52,7 +52,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" != "$LATEST_RELEASE_COMMIT" ]] && echo "should_build=true" >> $GITHUB_OUTPUT || echo "should_build=false" >> $GITHUB_OUTPUT
 
   prepare-release:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: check-updates
     if: needs.check-updates.outputs.should_build == 'true'
     outputs:
@@ -72,7 +72,7 @@ jobs:
           gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Building..." --prerelease || true
 
   generate-matrix:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: check-updates
     if: needs.check-updates.outputs.should_build == 'true'
     outputs:
@@ -96,21 +96,28 @@ jobs:
   buildroot:
     name: ${{ matrix.thingino-version }}
     needs: [generate-matrix, prepare-release]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
+    # 关键修改：使用原作者相同的 Debian Trixie 容器环境
+    container:
+      image: debian:trixie
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.generate-matrix.outputs.matrix)}}
     steps:
       - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y curl gnupg2 git jq rsync
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          apt-get update
+          apt-get install -y curl gnupg2 git jq rsync ca-certificates
+          # 容器内安装 GitHub CLI
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
+          apt-get update
+          apt-get install -y --no-install-recommends \
             build-essential bc cmake cpio file gh make gawk m4 p7zip-full perl \
             procps python3 rsync tzdata u-boot-tools unzip wget 7zip
+      
+      - name: Setup safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,11 +131,10 @@ jobs:
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
       - name: Collect Artifacts
-        id: collect
         run: |
           BOARD_NAME="${{ matrix.thingino-version }}"
-          # 在宿主机环境下，output 路径通常在当前目录
-          OUTPUT_DIR=$(ls -d output 2>/dev/null || ls -d ../output-* 2>/dev/null | head -n 1)
+          # 在容器环境下，output 目录通常在当前目录
+          OUTPUT_DIR="output"
           IMAGES_DIR="${OUTPUT_DIR}/${BOARD_NAME}/images"
           
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
@@ -157,7 +163,7 @@ jobs:
 
   finalize-release:
     needs: [buildroot, prepare-release]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: always()
     steps:
       - name: Finalize
