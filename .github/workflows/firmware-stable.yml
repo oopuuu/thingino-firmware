@@ -97,7 +97,6 @@ jobs:
     name: ${{ matrix.thingino-version }}
     needs: [generate-matrix, prepare-release]
     runs-on: ubuntu-24.04
-    # 关键修改：使用原作者相同的 Debian Trixie 容器环境
     container:
       image: debian:trixie
     strategy:
@@ -108,7 +107,6 @@ jobs:
         run: |
           apt-get update
           apt-get install -y curl gnupg2 git jq rsync ca-certificates
-          # 容器内安装 GitHub CLI
           curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list
           apt-get update
@@ -133,26 +131,33 @@ jobs:
       - name: Collect Artifacts
         run: |
           BOARD_NAME="${{ matrix.thingino-version }}"
-          # 在容器环境下，output 目录通常在当前目录
-          OUTPUT_DIR="output"
-          IMAGES_DIR="${OUTPUT_DIR}/${BOARD_NAME}/images"
+          # 关键点：WORKFLOW=1 时，产物被重定向到了 /github/home/output-stable/
+          # 这里的 /github/home 映射的是容器内的 root 用户的 home
+          IMAGES_DIR="/github/home/output-stable/${BOARD_NAME}/images"
           
+          echo "Checking absolute images path: $IMAGES_DIR"
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
+          
           if [ -d "$IMAGES_DIR" ]; then
+            echo "Copying artifacts from $IMAGES_DIR"
             cp -v $IMAGES_DIR/thingino-${BOARD_NAME}* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/u-boot* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/uImage $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/rootfs.squashfs $GITHUB_WORKSPACE/all_artifacts/ || true
           else
-            echo "Searching images in workspace..."
-            find . -name "thingino-*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
+            echo "Warning: Directory not found. Attempting deep search..."
+            find /github/home/output-stable/ -name "thingino-${BOARD_NAME}*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
           fi
+          
+          echo "Final artifact list:"
+          ls -lh $GITHUB_WORKSPACE/all_artifacts/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: thingino-${{ matrix.thingino-version }}-firmware
           path: all_artifacts/
+          if-no-files-found: error
 
       - name: Release Update
         uses: softprops/action-gh-release@v2
