@@ -813,10 +813,29 @@ static int main_loop(void) {
     g_state.brightness_index = 0;
 
     /* Initialize brightness history */
+ 
+    float initial_b = -1.0f;
+    for (int retry = 0; retry < 5; retry++) {
+        initial_b = calculate_brightness_from_isp();
+        if (initial_b >= 0) break;
+        usleep(200000);
+    }
+    if (initial_b < 0) initial_b = 50.0f; /* Neutral starting value if read failed*/
+
     for (i = 0; i < BRIGHTNESS_SAMPLES; i++) {
-        g_state.brightness_history[i] = 50.0f;  /* Neutral starting value */
+        g_state.brightness_history[i] = initial_b;
     }
 
+    if (initial_b < g_config.threshold_low) {
+        log_message(LOG_INFO, "Boot sync: Dark detected (%.1f%%). Setting NIGHT mode.", initial_b);
+        apply_night_settings_thingino();
+        g_state.current_mode = MODE_NIGHT;
+    } else {
+        log_message(LOG_INFO, "Boot sync: Light detected (%.1f%%). Setting DAY mode.", initial_b);
+        apply_day_settings_thingino();
+        g_state.current_mode = MODE_DAY;
+    }
+    gettimeofday(&g_state.last_transition, NULL);
     while (g_state.running && !g_terminate_flag) {
         /* Calculate current brightness using Thingino methods */
         brightness = calculate_brightness_thingino();
