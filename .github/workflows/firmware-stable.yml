@@ -4,17 +4,21 @@ on:
     - cron:  '30 8 * * 1'
   workflow_dispatch:
     inputs:
-      branch:
+      branch_choice:
         type: choice
-        description: 'Branch to build from'
-        required: false
-        default: 'stable'
+        description: '选择常用分支'
         options:
           - stable
           - master
+        default: 'stable'
+      branch_custom:
+        type: string
+        description: '或者：手动输入自定义分支名（留空则使用上方选择的分支）'
+        required: false
+        default: ''
       board_list:
         type: string
-        description: '型号 (如: zte_k540_t31x_sc4336_eth+atbm6032,360_ap1pa3_t31x_gc4653_atbm6031)'
+        description: '型号 (如: zte_k540_t31x_sc4336_eth+atbm6032)'
         required: false
 
 env:
@@ -30,12 +34,24 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
+      resolved_branch: ${{ steps.resolve.outputs.branch }}
     steps:
+      - name: Resolve Branch
+        id: resolve
+        run: |
+          # 逻辑：优先使用手动输入的分支名，如果为空则使用下拉菜单选中的分支
+          CUSTOM="${{ github.event.inputs.branch_custom }}"
+          CHOICE="${{ github.event.inputs.branch_choice }}"
+          FINAL_BRANCH="${CUSTOM:-$CHOICE}"
+          echo "Selected Branch: $FINAL_BRANCH"
+          echo "branch=$FINAL_BRANCH" >> $GITHUB_OUTPUT
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || 'stable' }}
+          ref: ${{ steps.resolve.outputs.branch }}
           fetch-depth: 0
+
       - name: Check for updates
         id: check
         run: |
@@ -81,7 +97,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || 'stable' }}
+          ref: ${{ needs.check-updates.outputs.resolved_branch }}
       - name: Generate Matrix
         id: set-matrix
         run: |
@@ -95,7 +111,7 @@ jobs:
 
   buildroot:
     name: ${{ matrix.thingino-version }}
-    needs: [generate-matrix, prepare-release]
+    needs: [generate-matrix, prepare-release, check-updates]
     runs-on: ubuntu-24.04
     container:
       image: debian:trixie
@@ -121,7 +137,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'true'
-          ref: ${{ github.event.inputs.branch || 'stable' }}
+          ref: ${{ needs.check-updates.outputs.resolved_branch }}
           fetch-depth: 0
 
       - name: Build Firmware
@@ -131,26 +147,16 @@ jobs:
       - name: Collect Artifacts
         run: |
           BOARD_NAME="${{ matrix.thingino-version }}"
-          # 关键点：WORKFLOW=1 时，产物被重定向到了 /github/home/output-stable/
-          # 这里的 /github/home 映射的是容器内的 root 用户的 home
           IMAGES_DIR="/github/home/output-stable/${BOARD_NAME}/images"
-          
-          echo "Checking absolute images path: $IMAGES_DIR"
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
-          
           if [ -d "$IMAGES_DIR" ]; then
-            echo "Copying artifacts from $IMAGES_DIR"
             cp -v $IMAGES_DIR/thingino-${BOARD_NAME}* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/u-boot* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/uImage $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/rootfs.squashfs $GITHUB_WORKSPACE/all_artifacts/ || true
           else
-            echo "Warning: Directory not found. Attempting deep search..."
             find /github/home/output-stable/ -name "thingino-${BOARD_NAME}*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
           fi
-          
-          echo "Final artifact list:"
-          ls -lh $GITHUB_WORKSPACE/all_artifacts/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
