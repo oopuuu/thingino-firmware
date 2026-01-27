@@ -13,12 +13,12 @@ on:
         default: 'stable'
       branch_custom:
         type: string
-        description: '或者：手动输入自定义分支名（留空则使用上方选择的分支）'
+        description: '或者：手动输入自定义分支名（如 add-zte-k540v2，留空则使用上方选择的分支）'
         required: false
         default: ''
       board_list:
         type: string
-        description: '型号 (如: zte_k540_t31x_sc4336_eth+atbm6032)'
+        description: '型号 (如: zte_k540v2_t31x_sc4336_eth+atbm6032)'
         required: false
 
 env:
@@ -39,9 +39,9 @@ jobs:
       - name: Resolve Branch
         id: resolve
         run: |
-          # 逻辑：优先使用手动输入的分支名，如果为空则使用下拉菜单选中的分支
           CUSTOM="${{ github.event.inputs.branch_custom }}"
           CHOICE="${{ github.event.inputs.branch_choice }}"
+          # 如果自定义输入不为空，则优先使用自定义分支
           FINAL_BRANCH="${CUSTOM:-$CHOICE}"
           echo "Selected Branch: $FINAL_BRANCH"
           echo "branch=$FINAL_BRANCH" >> $GITHUB_OUTPUT
@@ -142,21 +142,38 @@ jobs:
 
       - name: Build Firmware
         run: |
+          # 核心：使用 matrix 中的版本运行编译
           BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
       - name: Collect Artifacts
         run: |
           BOARD_NAME="${{ matrix.thingino-version }}"
-          IMAGES_DIR="/github/home/output-stable/${BOARD_NAME}/images"
+          BRANCH_NAME="${{ needs.check-updates.outputs.resolved_branch }}"
+          
+          # 根据 Makefile 逻辑匹配产物目录
+          if [ "$BRANCH_NAME" = "master" ]; then
+            IMAGES_DIR="/github/home/output/${BOARD_NAME}/images"
+          else
+            IMAGES_DIR="/github/home/output-${BRANCH_NAME}/${BOARD_NAME}/images"
+          fi
+          
+          echo "Searching artifacts in: $IMAGES_DIR"
           mkdir -p $GITHUB_WORKSPACE/all_artifacts
+          
           if [ -d "$IMAGES_DIR" ]; then
+            echo "Direct directory found. Copying files..."
             cp -v $IMAGES_DIR/thingino-${BOARD_NAME}* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/u-boot* $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/uImage $GITHUB_WORKSPACE/all_artifacts/ || true
             cp -v $IMAGES_DIR/rootfs.squashfs $GITHUB_WORKSPACE/all_artifacts/ || true
           else
-            find /github/home/output-stable/ -name "thingino-${BOARD_NAME}*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
+            echo "Directory $IMAGES_DIR not found. Using deep search in /github/home/..."
+            find /github/home/ -name "thingino-${BOARD_NAME}*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
+            find /github/home/ -name "u-boot-lzo-with-spl.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
           fi
+          
+          echo "Collected files list:"
+          ls -lh $GITHUB_WORKSPACE/all_artifacts/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
