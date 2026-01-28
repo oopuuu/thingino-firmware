@@ -7,9 +7,9 @@
     "mic_gain": 30,
     "mic_high_pass_filter": true,
     "mic_noise_suppression": 3,
-    "mic_vol": 120,
+    "mic_vol": 110,
     "spk_enabled": true,
-    "spk_gain": 23,
+    "spk_gain": 20,
     "spk_vol": 80
   }
 }

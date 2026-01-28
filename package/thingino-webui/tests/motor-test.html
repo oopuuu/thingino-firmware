@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thingino PT Motor Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Chivo:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #03060f;
+  --bg-accent: #04162b;
+  --panel: rgba(6, 14, 26, 0.85);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-shadow: 0 40px 80px rgba(2, 5, 15, 0.6);
+  --accent: #ff6b35;
+  --accent-soft: rgba(255, 107, 53, 0.18);
+  --accent-strong: #ffd166;
+  --text: #f5f7fb;
+  --muted: rgba(245, 247, 251, 0.6);
+  --line: rgba(255, 255, 255, 0.15);
+  font-family: 'Space Grotesk', 'Chivo', sans-serif;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #0c2d44 0%, transparent 55%),
+              radial-gradient(circle at 80% 0%, rgba(255, 107, 53, 0.2) 0%, transparent 45%),
+              linear-gradient(135deg, #03060f 0%, #050a17 60%, #031525 100%);
+  color: var(--text);
+}
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2.5rem clamp(1rem, 4vw, 3rem) 3rem;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.hero .eyebrow {
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  font-weight: 600;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.connection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+}
+
+.connection-chip .dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+  transition: background 0.3s ease;
+}
+
+.connection-chip[data-state="streaming"] .dot {
+  background: #2dd4bf;
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.8);
+}
+
+.connection-chip[data-state="reconnecting"] .dot {
+  background: #fbbf24;
+}
+
+.connection-chip[data-state="offline"] .dot {
+  background: #f87171;
+  box-shadow: none;
+}
+
+.feedback {
+  min-height: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--accent-strong);
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 1.25rem;
+  padding: clamp(1.25rem, 2vw, 1.75rem);
+  box-shadow: var(--panel-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.state-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.state-grid-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.value-block {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.value-block span {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.value-block strong {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 2.2rem;
+  font-weight: 500;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.status-chip[data-status="moving"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.status-chip[data-status="error"] {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fecaca;
+}
+
+.pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
+  grid-auto-rows: minmax(70px, 1fr);
+  gap: 0.6rem;
+}
+
+.pad button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.pad button:hover {
+  border-color: var(--accent);
+  background: rgba(255, 107, 53, 0.12);
+}
+
+.pad button:active {
+  transform: scale(0.96);
+  background: rgba(255, 107, 53, 0.22);
+}
+
+.pad button.center {
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  font-size: 0.95rem;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px dashed var(--line);
+}
+
+.mode-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.mode-toggle-btn {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.45rem 1.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.mode-toggle-btn.active {
+  background: rgba(45, 212, 191, 0.16);
+  border-color: #2dd4bf;
+  color: #2dd4bf;
+}
+
+.mode-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.step-group {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.input-number {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.input-number strong {
+  font-size: 1.4rem;
+  color: var(--accent-strong);
+}
+
+.absolute-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.absolute-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.absolute-form input {
+  margin-top: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font-size: 1rem;
+  padding: 0.6rem 0.8rem;
+  font-family: 'Chivo', sans-serif;
+}
+
+.button-primary {
+  grid-column: 1 / -1;
+  border: none;
+  border-radius: 0.9rem;
+  padding: 0.85rem 1rem;
+  background: linear-gradient(100deg, #ff6b35, #ffb703);
+  color: #03121f;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.button-primary:hover {
+  opacity: 0.9;
+}
+
+.button-primary:active {
+  transform: translateY(1px);
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.action-row button {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.45rem 1.2rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.action-row button:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.feed {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  font-family: 'Chivo', sans-serif;
+  font-size: 0.9rem;
+}
+
+.feed-list li {
+  display: flex;
+  justify-content: space-between;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.feed-list span {
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .pad {
+    grid-template-columns: repeat(3, minmax(60px, 1fr));
+  }
+}
+</style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <p class="eyebrow">Diagnostics</p>
+    <h1>Pan / Tilt Motor Bench</h1>
+    <div class="hero-meta">
+      <span class="connection-chip" id="connection" data-state="connecting">
+        <span class="dot"></span>
+        <span class="label">Connecting&hellip;</span>
+      </span>
+      <p class="feedback" id="feedback"></p>
+    </div>
+  </header>
+
+  <section class="panels">
+    <article class="panel">
+      <h2>Live Position</h2>
+      <div class="state-grid">
+        <div class="state-grid-row">
+          <div class="value-block">
+            <span>Pan</span>
+            <strong id="pan-value">&mdash;</strong>
+          </div>
+          <div class="value-block">
+            <span>Tilt</span>
+            <strong id="tilt-value">&mdash;</strong>
+          </div>
+        </div>
+        <div class="state-grid-row">
+          <div class="value-block">
+            <span>Speed</span>
+            <strong id="speed-value">&mdash;</strong>
+          </div>
+          <div class="value-block">
+            <span>Inversion</span>
+            <strong id="invert-value">&mdash;</strong>
+          </div>
+        </div>
+        <div class="status-chip" id="status-chip" data-status="unknown">Status &bull; <span id="status-value">No Signal</span></div>
+        <div class="feed">
+          <p class="eyebrow" style="letter-spacing:0.3em; font-size:0.7rem;">Recent positions</p>
+          <ul class="feed-list" id="position-feed">
+            <li><span>waiting for stream&hellip;</span></li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel">
+      <h2>Controls</h2>
+      <div class="pad" id="pad">
+        <button type="button" data-dx="-1" data-dy="1">&nwarr;</button>
+        <button type="button" data-dx="0" data-dy="1">&uarr;</button>
+        <button type="button" data-dx="1" data-dy="1">&nearr;</button>
+        <button type="button" data-dx="-1" data-dy="0">&larr;</button>
+        <button type="button" class="center" data-origin="true">Origin</button>
+        <button type="button" data-dx="1" data-dy="0">&rarr;</button>
+        <button type="button" data-dx="-1" data-dy="-1">&swarr;</button>
+        <button type="button" data-dx="0" data-dy="-1">&darr;</button>
+        <button type="button" data-dx="1" data-dy="-1">&searr;</button>
+      </div>
+
+      <div class="controls">
+        <div class="step-group">
+          <label for="step">Step size</label>
+          <div class="input-number">&Delta; &bull; <strong id="step-display">50</strong> steps</div>
+          <input type="range" id="step" min="5" max="500" value="50">
+        </div>
+
+        <div class="mode-toggle">
+          <button type="button" id="mode-toggle" class="mode-toggle-btn">Continuous mode: Off</button>
+          <p class="mode-hint">Hold a direction to start a long move, release to send stop. Step slider still applies to taps.</p>
+        </div>
+
+        <div class="action-row">
+          <button type="button" id="home">Home</button>
+          <button type="button" id="refresh-position">Refresh</button>
+        </div>
+
+        <form id="absolute-form" class="absolute-form">
+          <label>Pan target
+            <input type="number" id="target-pan" required>
+          </label>
+          <label>Tilt target
+            <input type="number" id="target-tilt" required>
+          </label>
+          <button type="submit" class="button-primary">Move to Target</button>
+        </form>
+      </div>
+    </article>
+  </section>
+
+  <p style="margin-top:2rem; font-size:0.85rem; color:var(--muted);">This standalone view drives <code>/x/json-motor.cgi</code> for movement commands and listens to the <code>/x/json-motor-stream.cgi</code> server-sent events feed for pan / tilt telemetry.</p>
+</main>
+
+<script>
+(() => {
+  const connection = document.getElementById('connection');
+  const feedback = document.getElementById('feedback');
+  const panValue = document.getElementById('pan-value');
+  const tiltValue = document.getElementById('tilt-value');
+  const speedValue = document.getElementById('speed-value');
+  const invertValue = document.getElementById('invert-value');
+  const statusChip = document.getElementById('status-chip');
+  const statusValue = document.getElementById('status-value');
+  const feedList = document.getElementById('position-feed');
+  const stepInput = document.getElementById('step');
+  const stepDisplay = document.getElementById('step-display');
+  const padButtons = document.querySelectorAll('#pad button');
+  const homeButton = document.getElementById('home');
+  const refreshButton = document.getElementById('refresh-position');
+  const targetPan = document.getElementById('target-pan');
+  const targetTilt = document.getElementById('target-tilt');
+  const absoluteForm = document.getElementById('absolute-form');
+  const modeToggle = document.getElementById('mode-toggle');
+
+  let lastReading = null;
+  const dirtyInputs = new Set();
+  const history = [];
+  let continuousMode = false;
+  let continuousActive = false;
+  let continuousPointerId = null;
+  let continuousPointerButton = null;
+  const axisLimits = { pan: 4000, tilt: 2000 };
+
+  const formatStatus = (raw) => {
+    if (raw === '1') return 'Moving';
+    if (raw === '0') return 'Idle';
+    return 'Unknown';
+  };
+
+  const updateConnection = (state, label) => {
+    connection.dataset.state = state;
+    connection.querySelector('.label').textContent = label;
+  };
+
+  const showFeedback = (msg, isError = false) => {
+    feedback.textContent = msg;
+    feedback.style.color = isError ? '#fca5a5' : 'var(--accent-strong)';
+    if (!msg) return;
+    clearTimeout(showFeedback.timer);
+    showFeedback.timer = setTimeout(() => {
+      feedback.textContent = '';
+    }, 3200);
+  };
+
+  const updateHistory = (pan, tilt, status) => {
+    const ts = new Date();
+    history.unshift({ pan, tilt, status, ts });
+    if (history.length > 8) history.pop();
+    feedList.innerHTML = history
+      .map(entry => {
+        const time = entry.ts.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return `<li><strong>${time}</strong><span>${entry.pan}, ${entry.tilt} &bull; ${entry.status}</span></li>`;
+      })
+      .join('');
+  };
+
+  const updateAxisLimits = (payload) => {
+    const xMax = Number(payload?.xmax);
+    const yMax = Number(payload?.ymax);
+    if (Number.isFinite(xMax) && xMax > 0) axisLimits.pan = xMax;
+    if (Number.isFinite(yMax) && yMax > 0) axisLimits.tilt = yMax;
+  };
+
+  const applyReading = (payload) => {
+    const pan = Number(payload?.xpos);
+    const tilt = Number(payload?.ypos);
+    const speed = Number(payload?.speed);
+    const invert = Number(payload?.invert);
+    const status = formatStatus(payload?.status);
+
+    if (Number.isFinite(pan)) {
+      panValue.textContent = pan;
+      if (!dirtyInputs.has(targetPan)) targetPan.value = pan;
+    }
+    if (Number.isFinite(tilt)) {
+      tiltValue.textContent = tilt;
+      if (!dirtyInputs.has(targetTilt)) targetTilt.value = tilt;
+    }
+    if (Number.isFinite(speed)) {
+      speedValue.textContent = speed;
+    }
+    if (Number.isFinite(invert)) {
+      invertValue.textContent = invert === 0 ? 'Normal' : invert;
+    }
+
+    updateAxisLimits(payload);
+    statusValue.textContent = status;
+
+    statusChip.dataset.status = payload?.error ? 'error' : status.toLowerCase();
+
+    if (!payload?.error && Number.isFinite(pan) && Number.isFinite(tilt)) {
+      updateHistory(pan, tilt, status);
+      lastReading = { pan, tilt };
+    }
+
+    if (payload?.error) {
+      showFeedback(payload.error.replace(/-/g, ' '), true);
+    }
+  };
+
+  const updateModeToggle = () => {
+    if (!modeToggle) return;
+    modeToggle.classList.toggle('active', continuousMode);
+    modeToggle.textContent = continuousMode ? 'Continuous mode: On' : 'Continuous mode: Off';
+  };
+
+  const computeContinuousVector = (dxFactor, dyFactor) => {
+    const panRange = axisLimits.pan || 4000;
+    const tiltRange = axisLimits.tilt || 2000;
+    return {
+      x: Math.round((dxFactor || 0) * panRange),
+      y: Math.round((dyFactor || 0) * tiltRange),
+    };
+  };
+
+  const startContinuousMotion = (dxFactor, dyFactor) => {
+    const vector = computeContinuousVector(dxFactor, dyFactor);
+    if (vector.x === 0 && vector.y === 0) return;
+    continuousActive = true;
+    sendMotor({ d: 'g', x: vector.x, y: vector.y }, 'Continuous move');
+  };
+
+  const stopContinuousMotion = () => {
+    if (!continuousActive) return;
+    continuousActive = false;
+    sendMotor({ d: 's' }, 'Stop motion');
+  };
+
+  const releaseContinuousPointer = () => {
+    if (continuousPointerButton && typeof continuousPointerButton.releasePointerCapture === 'function' && continuousPointerId !== null) {
+      try {
+        continuousPointerButton.releasePointerCapture(continuousPointerId);
+      } catch (_) {
+        // no-op
+      }
+    }
+    continuousPointerId = null;
+    continuousPointerButton = null;
+  };
+
+  const stopAllContinuousMoves = () => {
+    releaseContinuousPointer();
+    stopContinuousMotion();
+  };
+
+  const sendMotor = async (params, label) => {
+    const query = new URLSearchParams(params);
+    try {
+      const res = await fetch(`/x/json-motor.cgi?${query.toString()}`, { method: 'GET', cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data?.result !== 'success') throw new Error('Command rejected');
+      const detail = data?.message;
+      showFeedback(label || 'Command accepted');
+      if (detail) applyReading(detail);
+    } catch (err) {
+      showFeedback(err.message || 'Command failed', true);
+    }
+  };
+
+  const relativeMove = (dxFactor, dyFactor) => {
+    const step = Number(stepInput.value) || 50;
+    const dx = Math.round(dxFactor * step);
+    const dy = Math.round(dyFactor * step);
+    sendMotor({ d: 'g', x: dx, y: dy }, `Δ ${dx}, ${dy}`);
+  };
+
+  if (modeToggle) {
+    modeToggle.addEventListener('click', () => {
+      continuousMode = !continuousMode;
+      updateModeToggle();
+      if (!continuousMode) {
+        stopAllContinuousMoves();
+      } else {
+        showFeedback('Continuous mode enabled');
+      }
+    });
+    updateModeToggle();
+  }
+
+  padButtons.forEach(btn => {
+    if (btn.dataset.origin) {
+      btn.addEventListener('click', () => {
+        sendMotor({ d: 'h', x: 0, y: 0 }, 'Origin (0,0)');
+      });
+      return;
+    }
+    const dx = Number(btn.dataset.dx);
+    const dy = Number(btn.dataset.dy);
+    if (Number.isNaN(dx) || Number.isNaN(dy)) return;
+
+    btn.addEventListener('click', () => {
+      if (continuousMode) return;
+      relativeMove(dx, dy);
+    });
+
+    btn.addEventListener('pointerdown', (ev) => {
+      if (!continuousMode) return;
+      if (continuousPointerId !== null) return;
+      ev.preventDefault();
+      if (btn.setPointerCapture) {
+        btn.setPointerCapture(ev.pointerId);
+      }
+      continuousPointerId = ev.pointerId;
+      continuousPointerButton = btn;
+      startContinuousMotion(dx, dy);
+    });
+
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(type => {
+      btn.addEventListener(type, (ev) => {
+        if (!continuousMode) return;
+        if (continuousPointerId !== ev.pointerId) return;
+        ev.preventDefault();
+        releaseContinuousPointer();
+        stopContinuousMotion();
+      });
+    });
+  });
+
+  homeButton.addEventListener('click', () => {
+    sendMotor({ d: 'r' }, 'Homing');
+  });
+
+  refreshButton.addEventListener('click', () => {
+    sendMotor({ d: 'j' }, 'Manual refresh');
+  });
+
+  stepInput.addEventListener('input', () => {
+    stepDisplay.textContent = stepInput.value;
+  });
+
+  [targetPan, targetTilt].forEach(input => {
+    input.addEventListener('focus', () => dirtyInputs.add(input));
+    input.addEventListener('blur', () => dirtyInputs.delete(input));
+  });
+
+  absoluteForm.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const pan = Number(targetPan.value);
+    const tilt = Number(targetTilt.value);
+    if (!Number.isFinite(pan) || !Number.isFinite(tilt)) {
+      showFeedback('Provide numeric pan/tilt targets', true);
+      return;
+    }
+    sendMotor({ d: 'h', x: pan, y: tilt }, `Absolute ${pan}, ${tilt}`);
+  });
+
+  const loadInitialMotorInfo = async () => {
+    try {
+      const res = await fetch('/x/json-motor.cgi?d=i', { method: 'GET', cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.message) {
+        updateAxisLimits(data.message);
+        applyReading(data.message);
+      }
+    } catch (err) {
+      console.warn('Initial motor snapshot failed', err);
+    }
+  };
+
+  const initStream = () => {
+    const source = new EventSource('/x/json-motor-stream.cgi');
+    source.onopen = () => updateConnection('streaming', 'Streaming');
+    source.onerror = () => updateConnection('reconnecting', 'Reconnecting&hellip;');
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        applyReading(payload);
+      } catch (err) {
+        console.warn('Motor stream parse failed', err);
+      }
+    };
+    return source;
+  };
+
+  loadInitialMotorInfo();
+  initStream();
+  updateConnection('connecting', 'Connecting&hellip;');
+  window.addEventListener('blur', stopAllContinuousMoves);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopAllContinuousMoves();
+  });
+})();
+</script>
+</body>
+</html>

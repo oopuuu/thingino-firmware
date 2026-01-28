@@ -1,0 +1,56 @@
+BusyBox httpd Subdirectory ACL Override - Test Results
+=======================================================
+
+Test Configuration:
+-------------------
+/:testuser:testpass         # Protect root
+/onvif:*:                   # Open access to /onvif/
+/public:*:                  # Open access to /public/
+/admin:admin:secret         # Admin with different credentials
+
+Test Results:
+-------------
+
+✓ Test 1: GET /
+  Expected: HTTP 401 + WWW-Authenticate header
+  Result:   HTTP/1.1 401 Unauthorized + WWW-Authenticate: Basic realm="Web Server Authentication"
+  Status:   PASS - Root path requires authentication
+
+✓ Test 2: GET /onvif/
+  Expected: HTTP 200 + NO WWW-Authenticate header
+  Result:   HTTP/1.1 200 OK + <h1>ONVIF - Open Access</h1>
+  Status:   PASS - /onvif/ is completely open (NO auth challenge sent)
+
+✓ Test 3: GET /public/
+  Expected: HTTP 200 + NO WWW-Authenticate header
+  Result:   HTTP/1.1 200 OK + <h1>Public - Open Access</h1>
+  Status:   PASS - /public/ is completely open (NO auth challenge sent)
+
+✓ Test 4: GET / with credentials (testuser:testpass)
+  Expected: HTTP 200 + content
+  Result:   HTTP/1.1 200 OK + <h1>Root - Protected</h1>
+  Status:   PASS - Correct credentials accepted
+
+✓ Test 5: GET / with wrong credentials
+  Expected: HTTP 401 + WWW-Authenticate header
+  Result:   HTTP/1.1 401 Unauthorized + WWW-Authenticate: Basic realm="Web Server Authentication"
+  Status:   PASS - Wrong credentials rejected
+
+✓ Test 6: GET /admin/ with credentials (admin:secret)
+  Expected: HTTP 200 + content
+  Result:   HTTP/1.1 200 OK + <h1>Admin - Protected</h1>
+  Status:   PASS - More specific path overrides parent
+
+Summary:
+--------
+ALL TESTS PASSED ✓
+
+The patch successfully implements subdirectory ACL override:
+- Parent directories can require authentication
+- Subdirectories marked with "*:" completely bypass authentication
+- No HTTP 401 or WWW-Authenticate header is sent for open paths
+- More specific paths override less specific ones
+- Clients accessing /onvif/ and /public/ don't see any authentication challenge
+
+This is exactly the behavior requested: / is protected with password,
+but /onvif/ is openly accessible with NO Basic Auth prompt at all.

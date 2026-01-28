@@ -1,0 +1,5 @@
+/etc/onvif.json
+/etc/prudynt.json
+/etc/thingino.json
+/usr/sbin/sysupgrade-stage2
+

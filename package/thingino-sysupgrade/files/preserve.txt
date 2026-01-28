@@ -1,0 +1,16 @@
+/etc/TZ
+/etc/dropbear/dropbear_ed25519_host_key
+/etc/dropbear/dropbear_ed25519_host_key.pub
+/etc/hostname
+/etc/hosts
+/etc/passwd
+/etc/passwd-
+/etc/seedrng/seed.no-credit
+/etc/shadow
+/etc/shadow-
+/etc/timezone
+/etc/udhcpd-ap.conf
+/etc/udhcpd-portal.conf
+/etc/wpa-portal_ap.conf
+/etc/wpa_supplicant.conf
+
