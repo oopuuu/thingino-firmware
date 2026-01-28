@@ -143,7 +143,7 @@ jobs:
       - name: Build Firmware
         run: |
           # 核心：使用 matrix 中的版本运行编译
-          BOARD=${{ matrix.thingino-version }} make fast WORKFLOW=1
+          BOARD=${{ matrix.thingino-version }} CAMERA=${{ matrix.thingino-version }} make fast WORKFLOW=1
 
       - name: Collect Artifacts
         run: |
