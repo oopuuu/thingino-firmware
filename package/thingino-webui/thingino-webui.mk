@@ -240,8 +240,6 @@ define THINGINO_WEBUI_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/var/www/x/ch1.jpg
 	$(INSTALL) -D -m 0755 $(THINGINO_WEBUI_PKGDIR)/files/www/x/ch1.mjpg \
 		$(TARGET_DIR)/var/www/x/ch1.mjpg
-	$(INSTALL) -D -m 0755 $(THINGINO_WEBUI_PKGDIR)/files/www/x/config-network.cgi \
-		$(TARGET_DIR)/var/www/x/config-network.cgi
 	$(INSTALL) -D -m 0755 $(THINGINO_WEBUI_PKGDIR)/files/www/x/dl0.jpg \
 		$(TARGET_DIR)/var/www/x/dl0.jpg
 	$(INSTALL) -D -m 0755 $(THINGINO_WEBUI_PKGDIR)/files/www/x/dl1.jpg \
