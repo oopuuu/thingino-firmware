@@ -1991,7 +1991,7 @@ window.thinginoConfirm = thinginoConfirm;
 
 		const modalId = 'passwordWarningModal';
 		let modal = document.getElementById(modalId);
-		
+
 		if (!modal) {
 			modal = document.createElement('div');
 			modal.id = modalId;
@@ -2083,8 +2083,8 @@ window.thinginoConfirm = thinginoConfirm;
 					const result = await response.json();
 
 					if (!response.ok || (result && result.error)) {
-						const message = result && result.error && result.error.message 
-							? result.error.message 
+						const message = result && result.error && result.error.message
+							? result.error.message
 							: 'Failed to change password';
 						throw new Error(message);
 					}
@@ -2092,7 +2092,7 @@ window.thinginoConfirm = thinginoConfirm;
 					// Success!
 					showAlert('Password changed successfully! Logging out...', 'success');
 					changeBtn.textContent = 'Password Changed';
-					
+
 					// Force logout by redirecting to a protected endpoint with wrong credentials
 					// This will clear the browser's auth cache and prompt for new credentials
 					setTimeout(() => {
