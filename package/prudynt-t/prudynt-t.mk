@@ -2,7 +2,7 @@ PRUDYNT_T_SITE_METHOD = git
 # PRUDYNT_T_SITE = https://github.com/gtxaspec/prudynt-t
 PRUDYNT_T_SITE = https://github.com/themactep/prudynt-t
 PRUDYNT_T_SITE_BRANCH = stable
-PRUDYNT_T_VERSION = 57e3fffad302a4cd12dc944f538339da7faa40c3
+PRUDYNT_T_VERSION = 09ca87e2bf68e15aa3c15d7c092a1bcdbead9916
 
 PRUDYNT_T_OVERRIDE_FILE = $(BR2_EXTERNAL)/$(CAMERA_SUBDIR)/$(CAMERA)/prudynt-override.json
 
@@ -30,6 +30,13 @@ ifeq ($(BR2_PACKAGE_PRUDYNT_T_WEBSOCKETS),y)
 	PRUDYNT_T_DEPENDENCIES += libwebsockets
 	PRUDYNT_T_DEPENDENCIES += host-thingino-jct
 	PRUDYNT_T_CFLAGS += -DUSE_WEBSOCKETS
+endif
+
+# Pre-trigger buffer support
+ifeq ($(BR2_PACKAGE_PRUDYNT_T_PREBUFFER),y)
+	PRUDYNT_T_PREBUFFER_ENABLED = 1
+else
+	PRUDYNT_T_PREBUFFER_ENABLED = 0
 endif
 
 ifeq ($(BR2_TOOLCHAIN_USES_MUSL),y)
@@ -134,6 +141,7 @@ define PRUDYNT_T_BUILD_CMDS
 		$(if $(BR2_PACKAGE_PRUDYNT_T_FFMPEG),USE_FFMPEG=1) \
 		$(if $(BR2_PACKAGE_PRUDYNT_T_WEBRTC),WEBRTC_ENABLED=1,) \
 		$(if $(BR2_PACKAGE_PRUDYNT_T_WEBSOCKETS),USE_WEBSOCKETS=1,USE_WEBSOCKETS=0) \
+		USE_PREBUFFER=$(PRUDYNT_T_PREBUFFER_ENABLED) \
 		-C $(@D) all commit_tag=$(shell git show -s --format=%h)
 endef
 
