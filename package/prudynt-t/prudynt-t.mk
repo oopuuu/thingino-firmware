@@ -3,7 +3,6 @@ PRUDYNT_T_SITE_METHOD = git
 PRUDYNT_T_SITE = https://github.com/oopuuu/prudynt-t
 PRUDYNT_T_SITE_BRANCH = stable
 PRUDYNT_T_VERSION = stable
-
 PRUDYNT_T_OVERRIDE_FILE = $(BR2_EXTERNAL)/$(CAMERA_SUBDIR)/$(CAMERA)/prudynt-override.json
 
 PRUDYNT_T_GIT_SUBMODULES = YES
@@ -40,7 +39,7 @@ else
 endif
 
 ifeq ($(BR2_TOOLCHAIN_USES_MUSL),y)
-	PRUDYNT_T_DEPENDENCIES += ingenic-musl
+	PRUDYNT_T_DEPENDENCIES += ingenic-musl libexecinfo
 endif
 
 ifeq ($(BR2_TOOLCHAIN_USES_GLIBC),y)
@@ -129,6 +128,10 @@ endif
 PRUDYNT_LDFLAGS += $(TARGET_LDFLAGS) \
 	-L$(STAGING_DIR)/usr/lib \
 	-L$(TARGET_DIR)/usr/lib
+
+ifeq ($(BR2_TOOLCHAIN_USES_MUSL),y)
+	PRUDYNT_LDFLAGS += -lexecinfo
+endif
 
 define PRUDYNT_T_BUILD_CMDS
 	$(MAKE) \

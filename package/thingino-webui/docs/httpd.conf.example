@@ -1,0 +1,28 @@
+# Example BusyBox httpd configuration with subdirectory override
+# 
+# This demonstrates how to protect the root directory with a password
+# while allowing completely open (no auth challenge) access to specific
+# subdirectories like /onvif/
+
+# Protect everything under / with Basic Authentication
+# This will send HTTP 401 + WWW-Authenticate header
+/:admin:password123
+
+# Allow completely open access to /onvif/ subdirectory
+# This overrides the parent rule - NO auth challenge is sent
+/onvif:*:
+
+# Alternative syntax - empty credentials also means open access
+/public:
+
+# You can also have different credentials for different paths
+# More specific paths always win
+/admin:superuser:secret456
+
+# Test behavior:
+# curl http://localhost/              → 401 Unauthorized (requires auth)
+# curl http://localhost/index.html    → 401 Unauthorized (requires auth)
+# curl http://localhost/onvif/        → 200 OK (no auth, completely open)
+# curl http://localhost/onvif/device  → 200 OK (no auth, completely open)
+# curl http://localhost/public/       → 200 OK (no auth, completely open)
+# curl http://localhost/admin/        → 401 Unauthorized (requires superuser:secret456)
