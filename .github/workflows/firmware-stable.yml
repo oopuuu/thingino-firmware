@@ -18,7 +18,7 @@ on:
         default: ''
       board_list:
         type: string
-        description: '型号 (如: zte_k540v2_t31x_sc4336_eth+atbm6032)'
+        description: '型号 (如: zte_k540v2_t31x_sc4336_eth+atbm6032,360_ap1pa3_t31x_gc4653_atbm6031)'
         required: false
 
 env:
