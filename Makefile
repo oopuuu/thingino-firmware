@@ -22,14 +22,17 @@ endif
 
 # Camera IP address
 # shortened to just IP for convenience of running from command line
-IP ?= 192.168.1.10
+IP ?= 192.168.88.10
 CAMERA_IP_ADDRESS := $(IP)
 
 # Device of SD card
 SDCARD_DEVICE ?= /dev/sdf
 
 # TFTP server IP address to upload compiled images to
-TFTP_IP_ADDRESS ?= 192.168.1.254
+TFTP_IP_ADDRESS ?= 192.168.88.254
+
+# TFTP server root directory for local server
+TFTP_ROOT ?= $(BR2_EXTERNAL)/tftproot
 
 # project directories
 BR2_EXTERNAL := $(CURDIR)
@@ -126,7 +129,7 @@ SIZE_16K := 16384
 SIZE_8K := 8192
 SIZE_4K := 4096
 
-ALIGN_BLOCK := $(SIZE_32K)
+ALIGN_BLOCK := $(SIZE_64K)
 
 U_BOOT_GITHUB_URL := https://github.com/gtxaspec/u-boot-ingenic/releases/download/latest
 
@@ -173,10 +176,24 @@ EXTRAS_BIN_SIZE_ALIGNED = $(shell echo $$((($(EXTRAS_BIN_SIZE) + $(ALIGN_BLOCK) 
 
 # fixed size partitions
 U_BOOT_PARTITION_SIZE := $(SIZE_256K)
-UB_ENV_PARTITION_SIZE := $(SIZE_32K)
-CONFIG_PARTITION_SIZE := $(SIZE_224K)
+UB_ENV_PARTITION_SIZE := $(SIZE_64K)
+CONFIG_PARTITION_SIZE := $(SIZE_256K)
 KERNEL_PARTITION_SIZE = $(KERNEL_BIN_SIZE_ALIGNED)
 ROOTFS_PARTITION_SIZE = $(ROOTFS_BIN_SIZE_ALIGNED)
+
+export U_BOOT_PARTITION_SIZE
+export UB_ENV_PARTITION_SIZE
+export CONFIG_PARTITION_SIZE
+export ALIGN_BLOCK
+
+# Partition sizes in KB for mtdparts
+U_BOOT_SIZE_KB := $(shell echo $$(($(U_BOOT_PARTITION_SIZE) / 1024)))
+UB_ENV_SIZE_KB := $(shell echo $$(($(UB_ENV_PARTITION_SIZE) / 1024)))
+CONFIG_SIZE_KB := $(shell echo $$(($(CONFIG_PARTITION_SIZE) / 1024)))
+KERNEL_SIZE_KB = $(shell echo $$(($(KERNEL_PARTITION_SIZE) / 1024)))
+ROOTFS_SIZE_KB = $(shell echo $$(($(ROOTFS_PARTITION_SIZE) / 1024)))
+UPGRADE_SIZE_KB = $(shell echo $$(($(FIRMWARE_NOBOOT_SIZE) / 1024)))
+FLASH_SIZE_KB = $(shell echo $$(($(FLASH_SIZE_MB) * 1024)))
 
 FIRMWARE_FULL_SIZE = $(shell echo $$((($(FLASH_SIZE_MB) * 1024 * 1024))))
 FIRMWARE_NOBOOT_SIZE = $(shell echo $$(($(FIRMWARE_FULL_SIZE) - $(U_BOOT_PARTITION_SIZE) - $(UB_ENV_PARTITION_SIZE) - $(CONFIG_PARTITION_SIZE))))
@@ -192,6 +209,9 @@ CONFIG_OFFSET = $(shell echo $$(($(UB_ENV_OFFSET) + $(UB_ENV_PARTITION_SIZE))))
 KERNEL_OFFSET = $(shell echo $$(($(CONFIG_OFFSET) + $(CONFIG_PARTITION_SIZE))))
 ROOTFS_OFFSET = $(shell echo $$(($(KERNEL_OFFSET) + $(KERNEL_PARTITION_SIZE))))
 EXTRAS_OFFSET = $(shell echo $$(($(ROOTFS_OFFSET) + $(ROOTFS_PARTITION_SIZE))))
+
+export CONFIG_OFFSET
+export FLASH_SIZE_MB
 
 # special case with no uboot nor env
 EXTRAS_OFFSET_NOBOOT = $(shell echo $$(($(KERNEL_PARTITION_SIZE) + $(ROOTFS_PARTITION_SIZE))))
@@ -216,7 +236,8 @@ BR2_MAKE = $(MAKE) -C $(BR2_EXTERNAL)/buildroot BR2_EXTERNAL=$(BR2_EXTERNAL) O=$
 .PHONY: all bootstrap build build_fast clean clean-nfs-debug cleanbuild defconfig distclean \
 	dev fast help info pack release remove_bins repack sdk toolchain update upboot-ota \
 	upload_tftp upgrade_ota br-% check-config force-config show-config-deps clean-config \
-	agent-info show-vars
+	agent-info show-vars populate-shared-host check-shared-host auto-populate-shared-host \
+	tftpd-start tftpd-stop tftpd-restart tftpd-status tftpd-logs
 
 # Default: fast parallel incremental build
 all: defconfig build_fast pack
@@ -246,6 +267,8 @@ update:
 	@echo "=== UPDATING SUBMODULES ==="
 	git submodule init
 	git submodule update
+	# avoid changes to buildroot from mad agents
+	chmod -R a-w $(BR2_EXTERNAL)/buildroot
 	@$(FIGLET) "$(GIT_BRANCH)"
 
 update_manual:
@@ -261,10 +284,12 @@ bootstrap:
 build: $(U_BOOT_ENV_TXT)
 	$(info -------------------------------- $@)
 	$(BR2_MAKE) all
+	@$(MAKE) --no-print-directory auto-populate-shared-host
 
 build_fast: $(U_BOOT_ENV_TXT)
 	$(info -------------------------------- $@)
 	$(BR2_MAKE) -j$(shell nproc) all
+	@$(MAKE) --no-print-directory auto-populate-shared-host
 
 ### Configuration
 
@@ -340,6 +365,33 @@ endif
 		if [ -f $(BR2_EXTERNAL)/local.mk ]; then \
 			cp -f $(BR2_EXTERNAL)/local.mk $(OUTPUT_DIR)/local.mk; \
 		fi; \
+	fi
+	# Conditionally add shared host directory if it's populated
+	@SHARED_HOST="$(BR2_EXTERNAL)/host-shared"; \
+	BUILDROOT_VERSION=$$(cd $(BR2_EXTERNAL)/buildroot && git rev-parse HEAD 2>/dev/null || echo "unknown"); \
+	if [ -d "$$SHARED_HOST/bin" ] && [ -d "$$SHARED_HOST/lib" ]; then \
+		if [ -f "$$SHARED_HOST/.buildroot-version" ]; then \
+			SHARED_VERSION=$$(cat "$$SHARED_HOST/.buildroot-version"); \
+			if [ "$$BUILDROOT_VERSION" != "$$SHARED_VERSION" ]; then \
+				echo ""; \
+				echo "WARNING: Shared host directory was built with different Buildroot version!"; \
+				echo "  Shared:  $$SHARED_VERSION"; \
+				echo "  Current: $$BUILDROOT_VERSION"; \
+				echo ""; \
+				echo "Consider rebuilding shared host directory:"; \
+				echo "  rm -rf $$SHARED_HOST"; \
+				echo "  make CAMERA=any_camera"; \
+				echo "  make populate-shared-host"; \
+				echo ""; \
+				echo "Continuing with existing shared host (may cause issues)..."; \
+				sleep 3; \
+			fi; \
+		fi; \
+		echo "# Using shared host directory" >>$(OUTPUT_DIR)/.config; \
+		echo 'BR2_HOST_DIR="'"$$SHARED_HOST"'"' >>$(OUTPUT_DIR)/.config; \
+		echo "* Using shared host directory: $$SHARED_HOST"; \
+	else \
+		echo "* Shared host directory not found or empty, using default per-build host"; \
 	fi
 	if [ ! -L $(OUTPUT_DIR)/thingino ]; then \
 		ln -s $(BR2_EXTERNAL) $(OUTPUT_DIR)/thingino; \
@@ -552,6 +604,15 @@ pack: $(FIRMWARE_BIN_FULL) $(FIRMWARE_BIN_NOBOOT)
 	@echo "$(FIRMWARE_BIN_FULL)"
 	@echo "Update Image:"
 	@echo "$(FIRMWARE_BIN_NOBOOT)"
+	@echo "--------------------------------"
+	@echo "Copying images to TFTP root..."
+	@sudo mkdir -p /srv/tftp
+	@sudo cp -f $(FIRMWARE_BIN_FULL) /srv/tftp/$(FIRMWARE_NAME_FULL)
+	@sudo cp -f $(FIRMWARE_BIN_NOBOOT) /srv/tftp/$(FIRMWARE_NAME_NOBOOT)
+	@sudo cp -f $(FIRMWARE_BIN_FULL).sha256sum /srv/tftp/$(FIRMWARE_NAME_FULL).sha256sum 2>/dev/null || true
+	@sudo cp -f $(FIRMWARE_BIN_NOBOOT).sha256sum /srv/tftp/$(FIRMWARE_NAME_NOBOOT).sha256sum 2>/dev/null || true
+	@echo "TFTP: /srv/tftp/$(FIRMWARE_NAME_FULL)"
+	@echo "TFTP: /srv/tftp/$(FIRMWARE_NAME_NOBOOT)"
 
 # rebuild a package with smart configuration check
 rebuild-%: check-config
@@ -579,6 +640,135 @@ toolchain: defconfig
 	$(info -------------------------------- $@)
 	$(BR2_MAKE) sdk
 
+# populate shared host directory from current build
+populate-shared-host:
+	$(info -------------------------------- $@)
+	@SHARED_HOST="$(BR2_EXTERNAL)/host-shared"; \
+	if [ ! -d "$(OUTPUT_DIR)/host/bin" ]; then \
+		echo "ERROR: No host directory found at $(OUTPUT_DIR)/host"; \
+		echo "Please build at least once first: make CAMERA=your_camera"; \
+		exit 1; \
+	fi; \
+	echo "Copying host directory to $$SHARED_HOST..."; \
+	mkdir -p "$$SHARED_HOST"; \
+	rsync -a --delete $(OUTPUT_DIR)/host/ "$$SHARED_HOST/"; \
+	cd $(BR2_EXTERNAL)/buildroot && git rev-parse HEAD 2>/dev/null > "$$SHARED_HOST/.buildroot-version" || echo "unknown" > "$$SHARED_HOST/.buildroot-version"; \
+	date "+%Y-%m-%d %H:%M:%S" > "$$SHARED_HOST/.timestamp"; \
+	echo "Done! Shared host directory populated."; \
+	echo "Buildroot version: $$(cat $$SHARED_HOST/.buildroot-version)"; \
+	echo "Timestamp: $$(cat $$SHARED_HOST/.timestamp)"; \
+	echo "Future builds will automatically use this shared directory."
+
+# automatically populate shared host after successful build (called internally)
+auto-populate-shared-host:
+	@if [ $(RELEASE) -eq 1 ]; then \
+		exit 0; \
+	fi; \
+	SHARED_HOST="$(BR2_EXTERNAL)/host-shared"; \
+	if [ ! -d "$$SHARED_HOST" ]; then \
+		if [ ! -d "$(OUTPUT_DIR)/host/bin" ]; then \
+			exit 0; \
+		fi; \
+		echo ""; \
+		echo "Creating shared host directory for the first time..."; \
+		mkdir -p "$$SHARED_HOST"; \
+		rsync -a $(OUTPUT_DIR)/host/ "$$SHARED_HOST/" 2>/dev/null || true; \
+		cd $(BR2_EXTERNAL)/buildroot && git rev-parse HEAD 2>/dev/null > "$$SHARED_HOST/.buildroot-version" || echo "unknown" > "$$SHARED_HOST/.buildroot-version"; \
+		date "+%Y-%m-%d %H:%M:%S" > "$$SHARED_HOST/.timestamp"; \
+		HOST_COUNT=$$(ls "$$SHARED_HOST/bin" 2>/dev/null | wc -l); \
+		echo "✓ Shared host directory created: $$SHARED_HOST"; \
+		echo "  Host packages: $$HOST_COUNT"; \
+		echo "  Buildroot version: $$(cat $$SHARED_HOST/.buildroot-version)"; \
+		echo "  Future builds will automatically reuse this directory!"; \
+		echo ""; \
+		exit 0; \
+	fi; \
+	if [ ! -d "$(OUTPUT_DIR)/host/bin" ] && [ ! -L "$(OUTPUT_DIR)/host" ]; then \
+		exit 0; \
+	fi; \
+	BUILDROOT_VERSION=$$(cd $(BR2_EXTERNAL)/buildroot && git rev-parse HEAD 2>/dev/null || echo "unknown"); \
+	if [ -f "$$SHARED_HOST/.buildroot-version" ]; then \
+		SHARED_VERSION=$$(cat "$$SHARED_HOST/.buildroot-version"); \
+		if [ "$$BUILDROOT_VERSION" != "$$SHARED_VERSION" ]; then \
+			echo ""; \
+			echo "⚠️  Buildroot version changed. Skipping auto-populate."; \
+			echo "To update shared host: make CAMERA=$(CAMERA) populate-shared-host"; \
+			exit 0; \
+		fi; \
+	fi; \
+	if [ -L "$(OUTPUT_DIR)/host" ]; then \
+		echo ""; \
+		echo "✓ Using shared host directory (already up to date)"; \
+		date "+%Y-%m-%d %H:%M:%S" > "$$SHARED_HOST/.timestamp"; \
+		HOST_COUNT=$$(ls "$$SHARED_HOST/bin" 2>/dev/null | wc -l); \
+		echo "  Host packages: $$HOST_COUNT"; \
+		echo ""; \
+	else \
+		HOST_COUNT_BEFORE=$$(ls "$$SHARED_HOST/bin" 2>/dev/null | wc -l); \
+		echo ""; \
+		echo "Auto-updating shared host directory..."; \
+		rsync -a $(OUTPUT_DIR)/host/ "$$SHARED_HOST/" 2>/dev/null || true; \
+		date "+%Y-%m-%d %H:%M:%S" > "$$SHARED_HOST/.timestamp"; \
+		HOST_COUNT_AFTER=$$(ls "$$SHARED_HOST/bin" 2>/dev/null | wc -l); \
+		ADDED=$$(($$HOST_COUNT_AFTER - $$HOST_COUNT_BEFORE)); \
+		if [ $$ADDED -gt 0 ]; then \
+			echo "✓ Shared host updated: +$$ADDED new host packages (total: $$HOST_COUNT_AFTER)"; \
+		else \
+			echo "✓ Shared host up to date ($$HOST_COUNT_AFTER packages)"; \
+		fi; \
+		echo ""; \
+	fi
+
+# check shared host directory status
+check-shared-host:
+	$(info -------------------------------- $@)
+	@SHARED_HOST="$(BR2_EXTERNAL)/host-shared"; \
+	BUILDROOT_VERSION=$$(cd $(BR2_EXTERNAL)/buildroot && git rev-parse HEAD 2>/dev/null || echo "unknown"); \
+	echo "Current Buildroot version: $$BUILDROOT_VERSION"; \
+	echo ""; \
+	if [ ! -d "$$SHARED_HOST" ]; then \
+		echo "Status: Shared host directory does NOT exist"; \
+		echo "Location: $$SHARED_HOST"; \
+		echo ""; \
+		echo "To create it:"; \
+		echo "  1. make CAMERA=any_camera"; \
+		echo "  2. make populate-shared-host"; \
+	elif [ ! -d "$$SHARED_HOST/bin" ] || [ ! -d "$$SHARED_HOST/lib" ]; then \
+		echo "Status: Shared host directory exists but is EMPTY"; \
+		echo "Location: $$SHARED_HOST"; \
+		echo ""; \
+		echo "To populate it:"; \
+		echo "  1. make CAMERA=any_camera"; \
+		echo "  2. make populate-shared-host"; \
+	else \
+		echo "Status: Shared host directory is POPULATED and ready"; \
+		echo "Location: $$SHARED_HOST"; \
+		if [ -f "$$SHARED_HOST/.buildroot-version" ]; then \
+			SHARED_VERSION=$$(cat "$$SHARED_HOST/.buildroot-version"); \
+			echo "Buildroot version: $$SHARED_VERSION"; \
+			if [ "$$BUILDROOT_VERSION" != "$$SHARED_VERSION" ]; then \
+				echo ""; \
+				echo "⚠️  WARNING: VERSION MISMATCH!"; \
+				echo "  Shared:  $$SHARED_VERSION"; \
+				echo "  Current: $$BUILDROOT_VERSION"; \
+				echo ""; \
+				echo "Recommendation: Rebuild shared host directory"; \
+				echo "  rm -rf $$SHARED_HOST"; \
+				echo "  make CAMERA=any_camera"; \
+				echo "  make populate-shared-host"; \
+			else \
+				echo "✓ Version matches current Buildroot"; \
+			fi; \
+		else \
+			echo "Buildroot version: unknown (no .buildroot-version file)"; \
+		fi; \
+		if [ -f "$$SHARED_HOST/.timestamp" ]; then \
+			echo "Last updated: $$(cat $$SHARED_HOST/.timestamp)"; \
+		fi; \
+		echo ""; \
+		echo "Directory size: $$(du -sh $$SHARED_HOST | cut -f1)"; \
+	fi
+
 # flash new uboot image to the camera
 upboot_ota: $(U_BOOT_BIN)
 	$(info -------------------------------- $@)
@@ -598,6 +788,45 @@ upgrade_ota: $(FIRMWARE_BIN_FULL)
 upload_tftp: $(FIRMWARE_BIN_FULL)
 	$(info -------------------------------- $@)
 	busybox tftp -l $(FIRMWARE_BIN_FULL) -r $(FIRMWARE_NAME_FULL) -p $(TFTP_IP_ADDRESS)
+
+# Start standalone TFTP server for serving firmware images
+tftpd-start:
+	$(info -------------------------------- $@)
+	@mkdir -p $(TFTP_ROOT)
+	@if [ "$(TFTP_PORT)" = "69" ] || [ -z "$(TFTP_PORT)" ]; then \
+		echo "Port 69 requires sudo - starting with sudo..."; \
+		sudo -E TFTP_ROOT=$(TFTP_ROOT) TFTP_PORT=$(TFTP_PORT) $(SCRIPTS_DIR)/tftpd-server.sh start; \
+	else \
+		TFTP_ROOT=$(TFTP_ROOT) TFTP_PORT=$(TFTP_PORT) $(SCRIPTS_DIR)/tftpd-server.sh start; \
+	fi
+
+# Stop standalone TFTP server
+tftpd-stop:
+	$(info -------------------------------- $@)
+	@if [ "$(TFTP_PORT)" = "69" ] || [ -z "$(TFTP_PORT)" ]; then \
+		sudo $(SCRIPTS_DIR)/tftpd-server.sh stop; \
+	else \
+		$(SCRIPTS_DIR)/tftpd-server.sh stop; \
+	fi
+
+# Restart standalone TFTP server
+tftpd-restart:
+	$(info -------------------------------- $@)
+	@if [ "$(TFTP_PORT)" = "69" ] || [ -z "$(TFTP_PORT)" ]; then \
+		sudo $(SCRIPTS_DIR)/tftpd-server.sh restart; \
+	else \
+		$(SCRIPTS_DIR)/tftpd-server.sh restart; \
+	fi
+
+# Show standalone TFTP server status
+tftpd-status:
+	$(info -------------------------------- $@)
+	@$(SCRIPTS_DIR)/tftpd-server.sh status
+
+# Show standalone TFTP server logs
+tftpd-logs:
+	$(info -------------------------------- $@)
+	@$(SCRIPTS_DIR)/tftpd-server.sh logs
 
 # download buildroot cache bundle from latest github release
 download-cache:
@@ -641,13 +870,22 @@ $(OUTPUT_DIR)/.config:
 	$(info -------------------------------- $@)
 	$(MAKE) force-config
 
-$(U_BOOT_ENV_TXT): $(OUTPUT_DIR)/.config
+$(U_BOOT_ENV_TXT): $(OUTPUT_DIR)/.config $(KERNEL_BIN) $(ROOTFS_BIN)
 	$(info -------------------------------- $@)
 	touch $@
 	grep -v '^#' $(BR2_EXTERNAL)/configs/common.uenv.txt | awk NF | tee -a $@
 	grep -v '^#' $(BR2_EXTERNAL)/$(CAMERA_SUBDIR)/$(CAMERA)/$(CAMERA).uenv.txt | awk NF | tee -a $@
 	grep -v '^#' $(BR2_EXTERNAL)/configs/local.uenv.txt | awk NF | tee -a $@
 	sort -u -o $@ $@
+	# Remove any existing mtdparts and bootcmd lines (will be regenerated with aligned sizes)
+	sed -i '/^mtdparts=/d; /^bootcmd=/d; /^kern_addr=/d; /^kern_size=/d' $@
+	# Add kernel address and size
+	echo "kern_addr=$$(printf '0x%x' $(KERNEL_OFFSET))" >> $@
+	echo "kern_size=$$(printf '0x%x' $(KERNEL_PARTITION_SIZE))" >> $@
+	# Add complete mtdparts with all partitions using aligned sizes
+	echo "mtdparts=jz_sfc:$(U_BOOT_SIZE_KB)k(boot),$(UB_ENV_SIZE_KB)k(env),$(CONFIG_SIZE_KB)k(config),$(KERNEL_SIZE_KB)k(kernel),$(ROOTFS_SIZE_KB)k(rootfs),-(rootfs_data),$(UPGRADE_SIZE_KB)k@$$(printf '0x%x' $(KERNEL_OFFSET))(upgrade),$(FLASH_SIZE_KB)k@0(all)" >> $@
+	# Simplified bootcmd - no need for sq probe or run mtdparts
+	echo 'bootcmd=sf probe;setenv bootargs mem=$${osmem} rmem=$${rmem} ispmem=$${ispmem} console=$${serialport},$${baudrate}n8 panic=$${panic_timeout} root=$${root} rootfstype=$${rootfstype} init=$${init} mtdparts=$${mtdparts};sf read $${baseaddr} $${kern_addr} $${kern_size};bootm $${baseaddr}' >> $@
 
 $(FIRMWARE_BIN_FULL): $(U_BOOT_BIN) $(UB_ENV_BIN) $(CONFIG_BIN) $(KERNEL_BIN) $(ROOTFS_BIN) $(EXTRAS_BIN)
 	$(info -------------------------------- $@)
@@ -664,10 +902,7 @@ $(FIRMWARE_BIN_NOBOOT): $(FIRMWARE_BIN_FULL)
 	$(info -------------------------------- $@)
 	dd if=$(FIRMWARE_BIN_FULL) of=$@ bs=$(FIRMWARE_NOBOOT_SIZE) count=1 skip=$(KERNEL_OFFSET)B
 
-$(U_BOOT_BIN):
-	$(info -------------------------------- $@)
-
-$(UB_ENV_BIN):
+$(UB_ENV_BIN): $(U_BOOT_ENV_TXT)
 	$(info -------------------------------- $@)
 	$(HOST_DIR)/bin/mkenvimage -s $(UB_ENV_PARTITION_SIZE) -o $@ $(U_BOOT_ENV_TXT)
 
@@ -685,7 +920,7 @@ $(CONFIG_BIN): $(CONFIG_PARTITION_DIR)/.keep
 		--eraseblock=$(ALIGN_BLOCK) --pad=$(CONFIG_PARTITION_SIZE)
 
 # create extras partition image
-$(EXTRAS_BIN): $(U_BOOT_BIN) $(ROOTFS_BIN)
+$(EXTRAS_BIN): $(ROOTFS_BIN) $(U_BOOT_BIN)
 	$(info -------------------------------- $@)
 	# remove older image if present
 	if [ -f $@ ]; then rm $@; fi
@@ -714,6 +949,11 @@ $(KERNEL_BIN):
 $(ROOTFS_BIN):
 	$(info -------------------------------- $@)
 	$(BR2_MAKE) all
+
+# Rebuild U-Boot with actual partition sizes after rootfs is ready
+$(U_BOOT_BIN): $(ROOTFS_BIN)
+	$(info -------------------------------- $@ (rebuilding with actual partition sizes))
+	$(BR2_MAKE) thingino-uboot-dirclean thingino-uboot
 
 # create .tar file of rootfs
 $(ROOTFS_TAR):
@@ -769,7 +1009,7 @@ info: defconfig
 
 help:
 	$(info -------------------------------- $@)
-	@echo "\n\
+	@echo -e "\n\
 	Usage:\n\
 	  make bootstrap      install system deps\n\
 	  make update         update local repo and submodules (excludes buildroot)\n\
@@ -837,3 +1077,15 @@ show-vars:
 	@echo "CAMERA        = $(CAMERA)";
 	@echo "HOST_DIR      = $(HOST_DIR)";
 	@echo "BR2_MAKE      = $(BR2_MAKE)";
+
+# Catch-all rule: forward undefined targets to buildroot
+# This allows running buildroot targets directly without the br- prefix
+# e.g., "make linux-menuconfig" instead of "make br-linux-menuconfig"
+# Note: This must come after all explicit target definitions
+# Note: check-config is NOT a prerequisite here because:
+#   1. It would break non-buildroot targets (like when this rule incorrectly matched 'update')
+#   2. Buildroot targets will fail gracefully if config is missing
+#   3. Users should use 'make br-<target>' for buildroot targets, which includes check-config
+.DEFAULT:
+	$(info -------------------------------- $@)
+	$(BR2_MAKE) $@

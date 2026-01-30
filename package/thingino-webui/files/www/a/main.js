@@ -22,6 +22,10 @@ let heartbeatSource = null;
 let currentReconnectDelay = HeartBeatReconnectDelay;
 let debugModalCtx = null;
 
+// Password check state - must be initialized before heartbeat can start
+let isDefaultPassword = false;
+let passwordCheckComplete = false;
+
 function $(n) {
 	return document.querySelector(n)
 }
@@ -173,7 +177,15 @@ function safeStorageSet(key, value) {
 
 function applyThemeAttribute(theme) {
 	if (!theme) return;
-	document.documentElement.setAttribute('data-bs-theme', theme);
+	let resolvedTheme = theme;
+
+	// Resolve 'auto' based on time of day
+	if (theme === 'auto') {
+		const hour = new Date().getHours();
+		resolvedTheme = hour >= 8 && hour < 20 ? 'light' : 'dark';
+	}
+
+	document.documentElement.setAttribute('data-bs-theme', resolvedTheme);
 }
 
 function rememberThemeState(activeTheme, preferenceTheme) {
@@ -601,17 +613,15 @@ function updateHeartbeatUi(json) {
 		const configuredTimezone = resolveDeviceTimezone();
 		const heartbeatTimezone = typeof json.timezone === 'string' ? json.timezone.trim() : '';
 		const timezoneLabel = configuredTimezone || heartbeatTimezone;
-		const timeZoneId = timezoneLabel ? timezoneLabel.replaceAll(' ', '_') : '';
+		const timeZoneId = timezoneLabel ? timezoneLabel.replaceAll(' ', '_') : 'UTC';
 		let options = {
 			year: "numeric",
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",
-			minute: "2-digit"
+			minute: "2-digit",
+			timeZone: timeZoneId
 		};
-		if (timeZoneId) {
-			options.timeZone = timeZoneId;
-		}
 		const formatted = d.toLocaleString(navigator.language, options);
 		timeNowEl.textContent = timezoneLabel ? formatted + ' ' + timezoneLabel : formatted;
 	}
@@ -782,6 +792,12 @@ function updateHeartbeatUi(json) {
 }
 
 function startHeartbeatSse() {
+	// Check password state before starting SSE
+	if (!passwordCheckComplete || isDefaultPassword) {
+		console.log('startHeartbeatSse blocked: passwordCheckComplete=' + passwordCheckComplete + ', isDefaultPassword=' + isDefaultPassword);
+		return;
+	}
+
 	if (heartbeatSource) return;
 	heartbeatSource = new EventSource(HeartBeatEndpoint);
 	heartbeatSource.onmessage = (event) => {
@@ -797,7 +813,7 @@ function startHeartbeatSse() {
 		heartbeatSource.close();
 		heartbeatSource = null;
 		console.log(`Reconnecting in ${currentReconnectDelay / 1000}s`);
-		setTimeout(startHeartbeatSse, currentReconnectDelay);
+		setTimeout(heartbeat, currentReconnectDelay); // Use heartbeat() instead of startHeartbeatSse()
 		// Double the delay for next failure, capped at max
 		currentReconnectDelay = Math.min(currentReconnectDelay * 2, HeartBeatMaxReconnectDelay);
 	};
@@ -818,11 +834,25 @@ document.addEventListener('visibilitychange', () => {
 	if (document.hidden) {
 		cleanupHeartbeatResources();
 	} else {
-		heartbeat();
+		// Only restart heartbeat if password check is complete and password is OK
+		if (passwordCheckComplete && !isDefaultPassword) {
+			heartbeat();
+		}
 	}
 });
 
 function heartbeat() {
+	console.trace('heartbeat() called');
+	// Don't start heartbeat until password check is complete
+	if (!passwordCheckComplete) {
+		console.log('Heartbeat disabled: password check not complete');
+		return;
+	}
+	// Don't start heartbeat if using default password
+	if (isDefaultPassword) {
+		console.log('Heartbeat disabled: default password in use');
+		return;
+	}
 	startHeartbeatSse();
 }
 
@@ -1773,7 +1803,7 @@ window.thinginoConfirm = thinginoConfirm;
 		}
 
 		initCopyToClipboard()
-		heartbeat()
+		// Don't start heartbeat here - wait for password check to complete
 
 		// setup recording button handlers
 		$$('#recorder-ch0, #recorder-ch1').forEach(button => {
@@ -1954,4 +1984,189 @@ window.thinginoConfirm = thinginoConfirm;
 			focusedElement.blur();
 		}
 	});
+
+	// Check session status and default password
+	async function checkSessionAndPassword() {
+		try {
+			const response = await fetch('/x/session-status.cgi', {
+				cache: 'no-store'
+			});
+
+			if (!response.ok) {
+				// Session check failed - redirect to login
+				window.location.href = '/login.html';
+				return;
+			}
+
+			const data = await response.json();
+
+			if (!data.authenticated) {
+				// Not authenticated - redirect to login
+				window.location.href = '/login.html';
+				return;
+			}
+
+			// Check if using default password
+			if (data.is_default_password) {
+				isDefaultPassword = true;
+				passwordCheckComplete = true;
+				showPasswordWarningModal();
+			} else {
+				isDefaultPassword = false;
+				passwordCheckComplete = true;
+				heartbeat();
+			}
+		} catch (err) {
+			console.error('Session check failed:', err);
+			// On error, redirect to login
+			window.location.href = '/login.html';
+		}
+	}
+
+	function showPasswordWarningModal() {
+		// Don't show on password change page itself
+		if (window.location.pathname.includes('config-webui.html')) {
+			return;
+		}
+
+		const modalId = 'passwordWarningModal';
+		let modal = document.getElementById(modalId);
+
+		if (!modal) {
+			modal = document.createElement('div');
+			modal.id = modalId;
+			modal.className = 'modal fade';
+			modal.setAttribute('data-bs-backdrop', 'static');
+			modal.setAttribute('data-bs-keyboard', 'false');
+			modal.innerHTML = `
+				<div class="modal-dialog modal-dialog-centered">
+					<div class="modal-content border-warning">
+						<div class="modal-header bg-warning text-dark">
+							<h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i>Security Warning</h5>
+						</div>
+						<div class="modal-body">
+							<div id="password-warning-message">
+								<p><strong>You are using the default password "root".</strong></p>
+								<p>For security reasons, you must change the password immediately.</p>
+							</div>
+							<div id="password-change-alert" class="alert d-none" role="alert"></div>
+							<form id="password-change-form">
+								<div class="mb-3">
+									<label for="new-password" class="form-label">New Password</label>
+									<input type="password" class="form-control" id="new-password" required minlength="4">
+									<div class="form-text">Minimum 4 characters</div>
+								</div>
+								<div class="mb-3">
+									<label for="confirm-password" class="form-label">Confirm Password</label>
+									<input type="password" class="form-control" id="confirm-password" required minlength="4">
+								</div>
+							</form>
+						</div>
+						<div class="modal-footer">
+							<button type="button" class="btn btn-warning" id="change-password-btn">Change Password</button>
+						</div>
+					</div>
+				</div>
+			`;
+			document.body.appendChild(modal);
+
+			// Add event handler for password change
+			const form = modal.querySelector('#password-change-form');
+			const newPasswordInput = modal.querySelector('#new-password');
+			const confirmPasswordInput = modal.querySelector('#confirm-password');
+			const changeBtn = modal.querySelector('#change-password-btn');
+			const alertDiv = modal.querySelector('#password-change-alert');
+
+			function showAlert(message, type) {
+				alertDiv.className = `alert alert-${type}`;
+				alertDiv.textContent = message;
+				alertDiv.classList.remove('d-none');
+			}
+
+			function hideAlert() {
+				alertDiv.classList.add('d-none');
+			}
+
+			changeBtn.addEventListener('click', async (e) => {
+				e.preventDefault();
+				hideAlert();
+
+				const newPassword = newPasswordInput.value;
+				const confirmPassword = confirmPasswordInput.value;
+
+				if (!newPassword || newPassword.length < 4) {
+					showAlert('Password must be at least 4 characters long.', 'danger');
+					return;
+				}
+
+				if (newPassword !== confirmPassword) {
+					showAlert('Passwords do not match.', 'danger');
+					return;
+				}
+
+				if (newPassword === 'root') {
+					showAlert('Please choose a password different from "root".', 'danger');
+					return;
+				}
+
+				// Close SSE connection BEFORE changing password to prevent auth prompts
+				if (typeof cleanupHeartbeatResources === 'function') {
+					cleanupHeartbeatResources();
+				}
+
+				// Disable button and show loading state
+				changeBtn.disabled = true;
+				changeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Changing...';
+
+				try {
+					const response = await fetch('/x/json-config-webui.cgi', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ password: newPassword })
+					});
+
+					const result = await response.json();
+
+					if (!response.ok || (result && result.error)) {
+						const message = result && result.error && result.error.message
+							? result.error.message
+							: 'Failed to change password';
+						throw new Error(message);
+					}
+
+					// Success!
+					showAlert('Password changed successfully! Closing dialog...', 'success');
+					changeBtn.textContent = 'Password Changed';
+
+					// Password changed - mark as secure and close modal
+					isDefaultPassword = false;
+
+					// Close modal and start heartbeat
+					setTimeout(() => {
+						const bsModal = bootstrap.Modal.getInstance(modal);
+						if (bsModal) bsModal.hide();
+						// Start heartbeat now that password is secure
+						if (!heartbeatSource) {
+							heartbeat();
+						}
+					}, 1500);
+
+				} catch (err) {
+					showAlert(err.message || 'Failed to change password.', 'danger');
+					changeBtn.disabled = false;
+					changeBtn.textContent = 'Change Password';
+				}
+			});
+		}
+
+		const bsModal = new bootstrap.Modal(modal);
+		bsModal.show();
+	}
+
+	// Run session and password check after page loads
+	if (window.location.pathname !== '/401.html' && window.location.pathname !== '/login.html') {
+		window.addEventListener('load', () => {
+			setTimeout(checkSessionAndPassword, 100);
+		});
+	}
 })();

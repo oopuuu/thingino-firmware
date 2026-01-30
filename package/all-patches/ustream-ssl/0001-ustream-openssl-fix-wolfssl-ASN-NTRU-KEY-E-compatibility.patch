@@ -1,0 +1,10 @@
+--- a/ustream-openssl.c	2026-01-21 18:27:41.357852076 -0500
++++ b/ustream-openssl.c	2026-01-21 18:27:41.357852076 -0500
+@@ -308,7 +308,6 @@
+ 	case ASN_SIG_HASH_E:
+ 	case ASN_SIG_KEY_E:
+ 	case ASN_DH_KEY_E:
+-	case ASN_NTRU_KEY_E:
+ 	case ASN_CRIT_EXT_E:
+ 	case ASN_ALT_NAME_E:
+ 	case ASN_NO_PEM_HEADER:

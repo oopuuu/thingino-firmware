@@ -30,6 +30,53 @@ check_interface() {
 	ip link show $1 > /dev/null 2>&1 || die "Error: interface $1 does not exist."
 }
 
+ap() {
+	local  enabled=$(jct /etc/thingino.json get wlan_ap.enabled 2>/dev/null)
+	local     ssid=$(jct /etc/thingino.json get wlan_ap.ssid 2>/dev/null)
+	local password=$(jct /etc/thingino.json get wlan_ap.pass 2>/dev/null)
+	case "$1" in
+		on|1)
+			echo -c 208 "Thingino Wi-Fi Access Point setup"
+			read -r -p "Enter Wi-Fi AP SSID [$ssid]: " new_ssid
+			if [ -z "$new_ssid" ]; then
+				new_ssid="$ssid"
+			fi
+			while :; do
+				read -r -p "Enter Wi-Fi AP Password [$password]: " new_password
+				if [ -z "$new_password" ]; then
+					if [ -n "$password" ]; then
+						new_password="$password"
+						break
+					fi
+					echo -c 160 "Password cannot be empty when no previous password exists."
+					continue
+				fi
+				[ ${#new_password} -ge 8 ] && [ ${#new_password} -le 64 ] && break
+				echo -c 160 "Passwords is not between 8 and 64 characters. Please try again."
+			done
+			local psk=$(convert_psk "$new_ssid" "$new_password")
+			local temp_file=$(mktemp -u)
+			echo "{\"changed_by\":\"$0\"}" > $temp_file
+			jct $temp_file set wlan_ap.enabled "true"
+			jct $temp_file set wlan_ap.ssid "$new_ssid"
+			jct $temp_file set wlan_ap.pass_plain "$new_password"
+			jct $temp_file set wlan_ap.pass "$psk"
+			jct /etc/thingino.json import $temp_file
+			rm -f $temp_file
+			echo -c 40 -e "Wi-Fi AP settings updated. Please restart to activate.\n"
+			;;
+		off|0)
+			jct /etc/thingino.json set wlan_ap.enabled "false"
+			;;
+		*)
+			echo "Wi-Fi AP:"
+			[ "true" = "$enabled" ] && echo "Status: enabled" || echo "Status: not enabled"
+			[ -n "$ssid" ] && echo "SSID: $ssid" || echo "SSID: -not set-"
+			[ -n "$password" ] && echo "Password: $password" || echo "Password: -not set-"
+			;;
+	esac
+}
+
 cli() {
 	@if WIFI_FAMILY_ATBM@
 	CMD_FILE=$(find /sys/module/atbm*/atbmfs -name atbm_cmd 2>/dev/null)
@@ -179,6 +226,8 @@ temp() {
 }
 
 case "$entry_command" in
+	wlanap)
+		exec wlan ap ;;
 	wlancli)
 		cli "$@" ;;
 	wlaninfo)
@@ -194,6 +243,7 @@ case "$entry_command" in
 	*)
 		# main case selection for wlan command if no specific entry_command match
 		case "$1" in
+			ap) shift; ap "$@" ;;
 			cli) shift; cli "$@" ;;
 			info) show_info ;;
 			reset) reset ;;
