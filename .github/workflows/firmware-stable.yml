@@ -140,6 +140,16 @@ jobs:
           ref: ${{ needs.check-updates.outputs.resolved_branch }}
           fetch-depth: 0
 
+      - name: Create dummy sudo
+        run: |
+          # 创建一个名为 sudo 的脚本
+          echo '#!/bin/sh' > sudo
+          echo 'exec "$@"' >> sudo
+          chmod +x sudo
+          
+          # 将当前目录加到 PATH 的最前面，这样系统会优先使用我们的假 sudo
+          echo "$(pwd)" >> $GITHUB_PATH
+
       - name: Build Firmware
         run: |
           # 核心：使用 matrix 中的版本运行编译
