@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 . /usr/share/common
 
 request_body=""

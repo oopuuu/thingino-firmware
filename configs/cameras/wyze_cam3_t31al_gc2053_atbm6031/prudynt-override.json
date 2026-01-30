@@ -9,7 +9,7 @@
     "mic_noise_suppression": 3,
     "mic_vol": 120,
     "spk_enabled": true,
-    "spk_gain": 20,
+    "spk_gain": 23,
     "spk_vol": 80
   }
 }

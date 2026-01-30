@@ -1,9 +1,4 @@
 #!/bin/sh
-
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 json_escape() {
   printf '%s' "$1" | sed \
     -e 's/\\/\\\\/g' \

@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 . /usr/share/common
 
 TAB_LIST="crontab dmesg httpd logcat logread lsmod netstat onvif prudynt status system top weblog"

@@ -34,9 +34,7 @@ menuconfig BR2_THINGINO_SYSTEM_PACKAGES
 	select BR2_PACKAGE_UBOOT_TOOLS
 	select BR2_PACKAGE_WPA_SUPPLICANT_DEBUG_SYSLOG if BR2_PACKAGE_WPA_SUPPLICANT
 	# virtual packages
-	select BR2_PACKAGE_THINGINO_SSL
 	select BR2_PACKAGE_THINGINO_VPN
-	select BR2_PACKAGE_THINGINO_WEBSERVER
 	help
 	  Thingino System Packages
 	  include essential system setup.
@@ -49,6 +47,7 @@ source "$BR2_EXTERNAL_THINGINO_PATH/package/ingenic-pwm/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/ingenic-sdk/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/logcat-mini/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/logcat/Config.in"
+source "$BR2_EXTERNAL_THINGINO_PATH/package/mbedtls-certgen/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/openimp/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/spi-tmi8152/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/telegrambot/Config.in"
@@ -70,27 +69,18 @@ source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-mmc/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-mxml/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-motors/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-nimble/Config.in"
+source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-portal-simple/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-provision/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-prusa-connect/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-sounds/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-system/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-sysupgrade/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-uboot/Config.in"
-source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-webui/Config.in"
-source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-portal-simple/Config.in"
-source "$BR2_EXTERNAL_THINGINO_PATH/package/wolfssh/Config.in"
-
+source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-uhttpd/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-webserver/Config.in"
-#source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-uhttpd/Config.in"
-#source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-ustream-ssl/Config.in"
-source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-httpd-ssl/Config.in"
-source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-libubox/Config.in"
+source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-webui/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-onvif/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/onvif-simple-server/Config.in"
-
-source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-ssl/Config.in"
-#source "$BR2_EXTERNAL_THINGINO_PATH/package/mbedtls-certgen/Config.in"
-#source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-wolfssl/Config.in"
 endif
 
 menuconfig BR2_THINGINO_STREAMER_PACKAGES
@@ -114,6 +104,7 @@ source "$BR2_EXTERNAL_THINGINO_PATH/package/libjuice/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/libdatachannel/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/usrsctp/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/prudynt-t/Config.in"
+source "$BR2_EXTERNAL_THINGINO_PATH/package/prudynt-t-legacy/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/raptor-ipc/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-ffmpeg/Config.in"
 source "$BR2_EXTERNAL_THINGINO_PATH/package/thingino-fonts/Config.in"

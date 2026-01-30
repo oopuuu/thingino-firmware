@@ -1,10 +1,7 @@
 #!/bin/sh
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
-. /usr/share/common
+# Source common functions if available (for thingino environment)
+[ -f /usr/share/common ] && . /usr/share/common
 
 json_escape() {
   # Simple but effective JSON escaping using printf and sed

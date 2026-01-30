@@ -1,10 +1,6 @@
 #!/bin/sh
+
 # Optimized heartbeat using cached data
-
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 CACHE_FILE="/tmp/heartbeat_cache.json"
 CACHE_MAX_AGE=1
 

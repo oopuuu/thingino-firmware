@@ -2,10 +2,6 @@
 # BusyBox httpd CGI for JSON API
 # Expects request body (application/json)
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 echo "Content-Type: application/json"
 echo
 

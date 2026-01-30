@@ -1,10 +1,6 @@
 #!/bin/sh
 # Export full prudynt configuration from memory
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 printf "Content-Type: application/json\r\n"
 printf "Content-Disposition: attachment; filename=\"prudynt-config-$(date +%Y%m%d-%H%M%S).json\"\r\n"
 printf "\r\n"

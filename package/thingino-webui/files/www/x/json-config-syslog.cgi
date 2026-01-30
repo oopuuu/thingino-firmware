@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 DOMAIN="rsyslog"
 CONFIG_FILE="/etc/thingino.json"
 TMP_FILE=""

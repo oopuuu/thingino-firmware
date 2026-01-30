@@ -1,7 +1,7 @@
 {
   "gpio": {
     "button_reset": 14,
-    "ir940": 50,
+    "ir850": 50,
     "ircut": "17 16",
     "led_b": {
       "pin": 57,

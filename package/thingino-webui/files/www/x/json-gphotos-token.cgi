@@ -1,10 +1,6 @@
 #!/bin/sh
 # Exchange a Google OAuth authorization code for refresh/access tokens
 
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 set -e
 
 send_json() {

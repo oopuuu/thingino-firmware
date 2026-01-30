@@ -1,9 +1,4 @@
 #!/bin/sh
-
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 umount -a -t nfs -l
 sleep 3
 echo "HTTP/1.1 302 Moved Temporarily

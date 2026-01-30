@@ -1,9 +1,4 @@
 #!/bin/sh
-
-# Check authentication
-. /var/www/x/auth.sh
-require_auth
-
 http_200() {
   printf 'Status: 200 OK\r\n'
 }
