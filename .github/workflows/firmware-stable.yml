@@ -160,30 +160,32 @@ jobs:
           BOARD_NAME="${{ matrix.thingino-version }}"
           BRANCH_NAME="${{ needs.check-updates.outputs.resolved_branch }}"
           
-          # 根据 Makefile 逻辑匹配产物目录
-          if [ "$BRANCH_NAME" = "master" ]; then
-            IMAGES_DIR="/github/home/output/${BOARD_NAME}/images"
-          else
-            IMAGES_DIR="/github/home/output-${BRANCH_NAME}/${BOARD_NAME}/images"
+          # 创建统一的收集目录
+          mkdir -p "$GITHUB_WORKSPACE/all_artifacts"
+          
+          # 1. 优先尝试定位最精准的相对路径（output目录通常在当前工作区下）
+          RELATIVE_IMAGES_DIR="output/${BRANCH_NAME}/${BOARD_NAME}-3.10.14-uclibc/images"
+          
+          if [ -d "$RELATIVE_IMAGES_DIR" ]; then
+            echo "Found exact relative images directory: $RELATIVE_IMAGES_DIR"
+            cp -v $RELATIVE_IMAGES_DIR/thingino-${BOARD_NAME}* "$GITHUB_WORKSPACE/all_artifacts/" || true
+            cp -v $RELATIVE_IMAGES_DIR/u-boot* "$GITHUB_WORKSPACE/all_artifacts/" || true
+            cp -v $RELATIVE_IMAGES_DIR/uImage "$GITHUB_WORKSPACE/all_artifacts/" || true
+            cp -v $RELATIVE_IMAGES_DIR/rootfs.squashfs "$GITHUB_WORKSPACE/all_artifacts/" || true
           fi
           
-          echo "Searching artifacts in: $IMAGES_DIR"
-          mkdir -p $GITHUB_WORKSPACE/all_artifacts
-          
-          if [ -d "$IMAGES_DIR" ]; then
-            echo "Direct directory found. Copying files..."
-            cp -v $IMAGES_DIR/thingino-${BOARD_NAME}* $GITHUB_WORKSPACE/all_artifacts/ || true
-            cp -v $IMAGES_DIR/u-boot* $GITHUB_WORKSPACE/all_artifacts/ || true
-            cp -v $IMAGES_DIR/uImage $GITHUB_WORKSPACE/all_artifacts/ || true
-            cp -v $IMAGES_DIR/rootfs.squashfs $GITHUB_WORKSPACE/all_artifacts/ || true
-          else
-            echo "Directory $IMAGES_DIR not found. Using deep search in /github/home/..."
-            find /github/home/ -name "thingino-${BOARD_NAME}*.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
-            find /github/home/ -name "u-boot-lzo-with-spl.bin" -exec cp -v {} $GITHUB_WORKSPACE/all_artifacts/ \;
+          # 2. 如果上一步没收集满，或者目录不存在，直接在工作区（$GITHUB_WORKSPACE）下进行全局扫描
+          # 这种方式绝对安全，因为工作区在容器内外是完全同步挂载的
+          if [ -z "$(ls -A "$GITHUB_WORKSPACE/all_artifacts" 2>/dev/null)" ]; then
+            echo "Relative directory empty or not found. Performing deep scan in workspace..."
+            find "$GITHUB_WORKSPACE" -type f -name "thingino-${BOARD_NAME}*.bin" -exec cp -v {} "$GITHUB_WORKSPACE/all_artifacts/" \;
+            find "$GITHUB_WORKSPACE" -type f -name "u-boot-lzo-with-spl.bin" -exec cp -v {} "$GITHUB_WORKSPACE/all_artifacts/" \;
+            find "$GITHUB_WORKSPACE" -type f -name "uImage" -exec cp -v {} "$GITHUB_WORKSPACE/all_artifacts/" \;
+            find "$GITHUB_WORKSPACE" -type f -name "rootfs.squashfs" -exec cp -v {} "$GITHUB_WORKSPACE/all_artifacts/" \;
           fi
           
           echo "Collected files list:"
-          ls -lh $GITHUB_WORKSPACE/all_artifacts/
+          ls -lh "$GITHUB_WORKSPACE/all_artifacts/"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
